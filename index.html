@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SimulationWORLD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a gate, a lobby of worlds, then one room per world. Inside a room the chat is a status sheet: portrait and parameters on top, log in the middle, input pinned below. */
+:root{
+  --bg:#eceff4;
+  --surface:#fafbfd;
+  --ink:#1f2433;
+  --muted:#626a80;
+  --line:#d3d8e3;
+  --warm:#c53d5e;
+  --cold:#3c5ca6;
+  --font-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --font-body:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141722;--surface:#1d212e;--ink:#e7e9f1;--muted:#9aa1b6;--line:#333a4d;--warm:#ee7390;--cold:#86a1e6;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141722;--surface:#1d212e;--ink:#e7e9f1;--muted:#9aa1b6;--line:#333a4d;--warm:#ee7390;--cold:#86a1e6;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.65}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--cold);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]{display:none !important}
+
+#app{height:100%;max-width:760px;margin:0 auto;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px 8px;flex-wrap:wrap}
+.bar h1{font-family:var(--font-display);font-weight:800;font-size:20px;margin:0;line-height:1.3;overflow-wrap:anywhere;min-width:0}
+.nav{display:flex;gap:4px;flex:none;flex-wrap:wrap}
+.nav a{font-size:13px;font-weight:700;color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:3px 11px}
+.nav a[aria-current="page"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+.view{flex:1;min-height:0;display:flex;flex-direction:column}
+.page{overflow-y:auto;padding:0 16px 28px;display:block}
+
+/* welcome */
+#view-welcome{justify-content:center;padding:24px 20px 56px}
+.gate-eyebrow{font-size:13px;letter-spacing:.3em;color:var(--muted);font-weight:700;margin:0 0 6px}
+.gate-title{font-family:var(--font-display);font-weight:800;font-size:clamp(34px,10vw,60px);line-height:1.08;margin:0;overflow-wrap:anywhere}
+.gate-title span{color:var(--warm)}
+.gate-rule{height:2px;background:var(--ink);width:72px;margin:18px 0}
+.gate-lead{margin:0 0 26px;color:var(--muted);max-width:30em}
+.gate-actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn.big{height:52px;padding:0 30px;font-size:16px}
+
+/* chat top row */
+.stage{display:grid;grid-template-columns:minmax(104px,34%) 1fr;gap:10px;padding:0 16px 8px}
+.portrait{position:relative;border:1px solid var(--line);background:var(--surface);border-radius:4px;overflow:hidden;aspect-ratio:3/4;max-height:230px;width:100%}
+.portrait img{width:100%;height:100%;object-fit:cover;object-position:50% 15%;display:block}
+.placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:11px;text-align:center;padding:8px}
+.placeholder svg{width:42%;height:auto;opacity:.5}
+.params{border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:8px 11px;display:flex;flex-direction:column;gap:6px;min-width:0;max-height:230px;overflow-y:auto}
+.params-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.focus-name{font-weight:700;font-size:13px;overflow-wrap:anywhere;min-width:0}
+.label{font-size:10px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+.aff-num{font-family:var(--font-display);font-weight:800;font-size:28px;line-height:1;font-variant-numeric:tabular-nums;flex:none}
+.aff-num.pos{color:var(--warm)} .aff-num.neg{color:var(--cold)}
+.meter{position:relative;height:11px;background:var(--bg);border:1px solid var(--line);border-radius:2px}
+.meter-fill{position:absolute;top:0;bottom:0;transition:left .4s,width .4s}
+.meter-fill.pos{background:var(--warm)} .meter-fill.neg{background:var(--cold)}
+.meter-zero{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink)}
+.meter-scale{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.stats{margin:0;display:grid;grid-template-columns:auto 1fr;column-gap:10px;row-gap:1px;font-size:13px}
+.stats dt{color:var(--muted)} .stats dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.delta-pos{color:var(--warm)} .delta-neg{color:var(--cold)}
+.pbar{font-size:12px}
+.pbar-top{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.pbar-top span:last-child{font-variant-numeric:tabular-nums}
+.pbar-track{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.pbar-fill{height:100%;background:var(--ink);transition:width .4s}
+.present{display:flex;flex-direction:column;gap:5px}
+.prow{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:3px;padding:2px 4px;cursor:pointer}
+.prow[aria-pressed="true"]{border-color:var(--ink)}
+.prow-top{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:700}
+.prow-top span:last-child{font-variant-numeric:tabular-nums;flex:none}
+.prow-top .pos{color:var(--warm)} .prow-top .neg{color:var(--cold)}
+.prow-sub{font-size:11px;color:var(--muted);font-weight:400}
+.pm{position:relative;height:6px;background:var(--bg);border:1px solid var(--line);border-radius:2px;margin-top:2px}
+.pm i{position:absolute;top:0;bottom:0;display:block}
+.pm i.pos{background:var(--warm)} .pm i.neg{background:var(--cold)}
+.pm b{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--ink)}
+.cast{display:flex;flex-wrap:wrap;gap:4px}
+.cast button{font-size:11px;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:1px 8px;cursor:pointer;font-variant-numeric:tabular-nums}
+.cast button[aria-pressed="true"]{border-color:var(--ink);font-weight:700}
+
+.banner{margin:0 16px 6px;font-size:12px;color:var(--muted);border-left:3px solid var(--line);padding:1px 0 1px 8px}
+.banner.alert{border-left-color:var(--warm);color:var(--ink)}
+.sysnote{margin:0 16px 6px;font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+
+/* log */
+#log{flex:1;min-height:80px;overflow-y:auto;margin:0 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0;display:flex;flex-direction:column;gap:10px}
+.empty{color:var(--muted);font-size:13px;margin:auto;text-align:center;padding:0 12px;display:flex;flex-direction:column;gap:10px;align-items:center}
+.msg{max-width:92%;display:flex;flex-direction:column;gap:2px}
+.msg .who{font-size:11px;color:var(--muted);font-weight:700}
+.msg .body{white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 11px;border-radius:3px}
+.msg.char{align-self:flex-start}
+.msg.char .body{background:var(--surface);border:1px solid var(--line)}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.msg.user .body{background:var(--ink);color:var(--bg)}
+.msg .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.mini{background:none;border:1px solid var(--line);border-radius:3px;font-size:12px;padding:1px 8px;cursor:pointer;color:var(--muted)}
+.mini:hover{color:var(--ink);border-color:var(--ink)}
+.mini.strong{color:var(--ink);border-color:var(--ink);font-weight:700}
+.msg-edit{width:100%;min-width:230px;min-height:110px;padding:8px;border:1px solid var(--cold);border-radius:3px;background:var(--surface)}
+
+#quick{display:flex;gap:6px;overflow-x:auto;padding:8px 16px 0}
+.qbtn{flex:none;max-width:78vw;text-align:left;font-size:12px;border:1px solid var(--line);background:var(--surface);border-radius:3px;padding:5px 9px;cursor:pointer}
+.qbtn.choice{border-color:var(--cold)}
+#composer{display:flex;gap:8px;padding:8px 16px 12px;align-items:flex-end}
+#composer textarea{flex:1;min-width:0;resize:none;height:44px;max-height:120px;padding:9px 11px;border:1px solid var(--line);border-radius:3px;background:var(--surface)}
+.btn{border:1px solid var(--ink);background:var(--ink);color:var(--bg);font-weight:700;border-radius:3px;padding:9px 16px;cursor:pointer;height:44px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.ghost{background:transparent;color:var(--ink);height:auto;padding:6px 12px;font-size:13px}
+.btn.big.ghost{height:52px;padding:0 22px;font-size:15px}
+
+/* forms */
+.note{font-size:13px;color:var(--muted);margin:0 0 12px;max-width:40em}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;min-width:0}
+.field label{font-size:13px;font-weight:700}
+.hint{font-size:12px;color:var(--muted)}
+.field input,.field textarea,.field select,.card input,.card textarea{padding:7px 10px;border:1px solid var(--line);border-radius:3px;background:var(--surface);width:100%}
+.field textarea,.card textarea{min-height:70px;resize:vertical}
+.field textarea.tall{min-height:200px}
+.field input[type=checkbox],.card input[type=checkbox],.field input[type=radio]{width:auto}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sec{font-family:var(--font-display);font-size:17px;margin:20px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+.sec:first-child{border-top:0;margin-top:4px;padding-top:0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.card{border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:10px;margin-bottom:10px;display:flex;flex-direction:column;gap:6px}
+.card .row{margin:0}
+.card-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:6px}
+.thumb{width:56px;height:74px;object-fit:cover;object-position:50% 15%;border:1px solid var(--line);border-radius:3px;background:var(--bg);flex:none}
+.thumb.sm{width:38px;height:50px}
+.imgrow{display:flex;gap:10px;align-items:center}
+.imgrow .grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.check{display:flex;gap:6px;align-items:center;font-size:13px}
+.listrow{display:flex;gap:10px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0;flex-wrap:wrap}
+.listrow .who{display:flex;gap:10px;align-items:center;min-width:0}
+.listrow strong{overflow-wrap:anywhere}
+.badge{font-size:11px;border:1px solid var(--line);border-radius:3px;padding:0 6px;color:var(--muted);white-space:nowrap}
+.opt{border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:10px;margin-bottom:8px;display:flex;gap:8px;align-items:flex-start}
+.opt.off{opacity:.6}
+@media (max-width:420px){.pair{grid-template-columns:1fr}.card-grid{grid-template-columns:1fr 1fr}.aff-num{font-size:24px}}
+@media (prefers-reduced-motion:reduce){.meter-fill,.pbar-fill{transition:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="bar" id="bar" hidden>
+    <h1 id="barTitle">SimulationWORLD</h1>
+    <nav class="nav" id="nav" aria-label="ページ"></nav>
+  </header>
+
+  <main class="view" id="view-welcome">
+    <p class="gate-eyebrow">WELCOME TO</p>
+    <h2 class="gate-title">Simulation<span>WORLD</span></h2>
+    <div class="gate-rule"></div>
+    <p class="gate-lead">ようこそ SimulationWORLD へ。世界観を書けば、その世界の住人たちが動き出します。世界ごとに部屋が分かれ、設定も会話も混ざりません。</p>
+    <div class="gate-actions">
+      <a class="btn big" href="#lobby">入室</a>
+      <a class="btn big ghost" href="#api">API設定</a>
+    </div>
+    <p class="hint" id="keyState" style="margin-top:16px"></p>
+  </main>
+
+  <main class="view page" id="view-api" hidden></main>
+  <main class="view page" id="view-lobby" hidden></main>
+  <main class="view page" id="view-room" hidden></main>
+  <main class="view page" id="view-cast" hidden></main>
+  <main class="view page" id="view-memory" hidden></main>
+
+  <main class="view" id="view-chat" hidden>
+    <section class="stage">
+      <div class="portrait">
+        <img id="portrait" alt="" hidden>
+        <div class="placeholder" id="placeholder">
+          <svg viewBox="0 0 60 70" aria-hidden="true"><circle cx="30" cy="22" r="14" fill="currentColor"/><path d="M4 70c0-16 11-26 26-26s26 10 26 26z" fill="currentColor"/></svg>
+          <span>世界や人物の画像は「世界」ページで追加できます</span>
+        </div>
+      </div>
+      <div class="params">
+        <span class="label">この場にいる人物</span>
+        <div class="present" id="presentList"></div>
+        <dl class="stats">
+          <dt>場所</dt><dd id="stScene">—</dd>
+          <dt>時間</dt><dd id="stTime">—</dd>
+        </dl>
+        <div id="customParams"></div>
+      </div>
+    </section>
+    <p class="banner" id="banner" hidden></p>
+    <p class="sysnote" id="sysNote" hidden></p>
+    <section id="log" aria-live="polite"></section>
+    <div id="quick"></div>
+    <form id="composer">
+      <label class="sr-only" for="input">メッセージ</label>
+      <textarea id="input" placeholder="行動や発言を自由に書く…（場面への指示は（）で囲む）" rows="1"></textarea>
+      <button class="btn" id="sendBtn" type="submit">送信</button>
+    </form>
+  </main>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* ================= helpers ================= */
+var $=function(id){return document.getElementById(id)};
+var seq=0;
+var DIRECT={value:1,checked:1,hidden:1,disabled:1,type:1,id:1,htmlFor:1,placeholder:1,src:1,alt:1,href:1,min:1,max:1,step:1,accept:1,multiple:1,name:1};
+function h(tag,props,kids){var e=document.createElement(tag);
+  if(props)for(var k in props){var v=props[k];if(v==null)continue;
+    if(k==="class")e.className=v;else if(k==="text")e.textContent=v;
+    else if(k.slice(0,2)==="on")e.addEventListener(k.slice(2),v);
+    else if(DIRECT[k])e[k]=v;else e.setAttribute(k,v)}
+  if(kids!=null)(Array.isArray(kids)?kids:[kids]).forEach(function(c){if(c==null||c===false)return;e.appendChild(typeof c==="string"?document.createTextNode(c):c)});
+  return e}
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
+function int(v){var n=parseInt(String(v==null?"":v).replace("−","-").replace("+",""),10);return isNaN(n)?0:n}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function signed(n){return n>0?"+"+n:n<0?String(n):"±0"}
+function byteLen(s){try{return new Blob([s]).size}catch(e){return s.length*3}}
+function lsGet(k){try{var r=localStorage.getItem(k);return r?JSON.parse(r):null}catch(e){return null}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){try{setBanner("この端末の保存容量がいっぱいで、保存できませんでした。使わない世界を書き出してから削除してください。",true)}catch(x){}return false}}
+function lsRaw(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function lsRawSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function lsRawSetOk(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}}
+function lsDel(k){try{localStorage.removeItem(k)}catch(e){}}
+function str(v){return String(v==null?"":v)}
+
+/* ================= data model ================= */
+var CH_FIELDS=[
+  {k:"role",label:"立場・年齢",pair:1},
+  {k:"first",label:"一人称",pair:1},
+  {k:"callUser",label:"主人公の呼び方",pair:1},
+  {k:"relation",label:"主人公との関係",pair:1},
+  {k:"personality",label:"性格",area:1},
+  {k:"speech",label:"口調・話し方",area:1,hint:"語尾や口ぐせの例があると再現度が上がります"},
+  {k:"background",label:"経歴・背景",area:1},
+  {k:"likes",label:"好きなもの・喜ぶこと",area:1},
+  {k:"dislikes",label:"嫌いなもの・怒ること",area:1},
+  {k:"other",label:"その他の設定",area:1}
+];
+var CH_KEYS=["role","first","callUser","relation","personality","speech","background","likes","dislikes","other","appearance","examples"];
+var LEN_TXT={1:"平均300字程度",2:"平均600字程度",3:"平均1000字程度",4:"平均1500字程度",5:"2000字以上。複数の段落で、情景・人物の仕草・会話をじっくり描写する"};
+function normLen(v){if(v==="s"||v==="m")return 1;if(v==="l")return 2;return clamp(int(v)||1,1,5)}
+var DEFAULT_SYS=["あなたはAIアシスタントとしてではなく、このシミュレーション世界の書き手（語り手）として振る舞います。主人公（ユーザー）以外の登場人物すべてと、世界の出来事を担当します。",
+  "・ユーザーの入力は、主人公の行動や台詞として受け取り、小説の文章として本文に織り込んでから、世界と登場人物の反応を書く。",
+  "・ユーザーの入力に書かれていない主人公の重要な決断や台詞は作らない。次にどうするかは必ずユーザーに委ねる。",
+  "・解説、注意書き、AIとしての発言など、物語の外の文章は本文に書かない。",
+  "・世界観に本来いる人物や場所は、登録がなくても世界観に沿って自然に登場させる。",
+  "・登場人物はそれぞれの事情と意思で動く。主人公に都合のよい展開ばかりにしない。"].join("\n");
+var STYLE_DEF={narr:"novel",len:1,choices:true,pick:"ai",hist:12,chunk:10,autoCast:true};
+function blankCharRec(){var s={};CH_KEYS.forEach(function(k){s[k]=""});return {id:uid(),name:"",auto:false,s:s,images:[],main:null,cur:null,affinity:0,mood:""}}
+function blankWorld(){return {v:4,present:[],id:uid(),updatedAt:0,sample:false,name:"",lore:"",user:{name:"",profile:""},opening:"",greeting:"",note:"",
+  style:clone(STYLE_DEF),image:null,chars:[],params:[],scene:"",time:"",turns:0,focus:null,lt:"",mem:[],book:[],
+  shortcuts:[{id:uid(),label:"場面を進める",text:"場面を次へ進める"},{id:uid(),label:"時間を進める",text:"少し時間を進める"},{id:uid(),label:"情景を詳しく",text:"周囲の情景や人物の様子を詳しく描写する"}]}}
+function sampleWorld(id){var w=blankWorld();if(id)w.id=id;w.sample=true;w.name="汐風町（サンプル）";
+  w.lore="現代日本の小さな港町「汐風町」。坂道と路地が多く、夕方になると漁港から霧笛が聞こえる。商店街の外れに古書店「汐風堂」があり、町の人のたまり場になっている。派手な事件は起きないが、住人それぞれに小さな事情がある。";
+  w.user.profile="最近この町に越してきた。古書店「汐風堂」に通い始めたところ。";
+  w.opening="雨の午後、古書店「汐風堂」";w.scene=w.opening;w.time="午後";
+  w.greeting="雨の午後、汐風堂の引き戸を開けると、古い紙の匂いがした。\n\n帳場で本を読んでいたミナトが顔を上げる。\n\nミナト「……あ、いらっしゃいませ。今日も来てくれたんですね」";
+  var c=blankCharRec();c.name="ミナト";c.s.role="古書店「汐風堂」の店番。二十歳前後";c.s.first="わたし";c.s.callUser="あなた";c.s.relation="最近よく店に来るようになった客";
+  c.s.personality="落ち着いていて人見知り。本の話になると急に饒舌になる";c.s.speech="丁寧語まじりの柔らかい話し方。「〜ですね」「〜かな」";
+  c.s.background="祖父から継いだ古書店をひとりで切り盛りしている";c.s.likes="古い旅行記、雨の日、濃いめの紅茶";c.s.dislikes="本を乱暴に扱われること、大きな音";
+  w.chars=[c];w.present=[c.id];
+  w.book=[{id:uid(),keys:"祖父,おじいさん",text:"ミナトの祖父は三年前に亡くなった。店の奥の棚には祖父の蔵書がそのまま残っていて、売り物にはしていない。"}];
+  return w}
+function normChar(c){var d=blankCharRec();if(!c||typeof c!=="object")return d;
+  ["id","name","auto","main","cur","affinity","mood"].forEach(function(k){if(c[k]!==undefined&&c[k]!==null)d[k]=c[k]});
+  if(c.s)CH_KEYS.forEach(function(k){if(typeof c.s[k]==="string")d.s[k]=c.s[k]});
+  if(Array.isArray(c.images))d.images=c.images;d.affinity=clamp(Math.round(+d.affinity||0),-100,100);d.name=str(d.name);return d}
+function normWorld(w){var d=blankWorld();if(!w||typeof w!=="object")return d;
+  ["id","updatedAt","sample","name","lore","opening","greeting","note","image","scene","time","turns","focus","lt"].forEach(function(k){if(w[k]!==undefined&&w[k]!==null)d[k]=w[k]});
+  if(w.user){d.user.name=str(w.user.name);d.user.profile=str(w.user.profile)}
+  if(w.style)for(var k in d.style){if(w.style[k]!==undefined)d.style[k]=w.style[k]}
+  ["params","mem","book","shortcuts"].forEach(function(k){if(Array.isArray(w[k]))d[k]=w[k]});
+  if(Array.isArray(w.chars))d.chars=w.chars.map(normChar);
+  if(w.v!==4)d.focus=null;if(Array.isArray(w.present))d.present=w.present;d.v=4;
+  d.style.len=normLen(d.style.len);d.style.hist=clamp(int(d.style.hist)||12,2,40);d.style.chunk=clamp(int(d.style.chunk)||10,4,30);return d}
+function normLog(l,id){var d={v:3,id:id,updatedAt:0,msgs:[]};if(l&&Array.isArray(l.msgs)){d.msgs=l.msgs;d.updatedAt=l.updatedAt||0}return d}
+function freshLog(w){var l={v:3,id:w.id,updatedAt:0,msgs:[]};if(str(w.greeting).trim())l.msgs.push({id:uid(),r:"c",t:w.greeting.trim()});return l}
+
+var index=null,W=null,L=null,editId=null;
+var imgData={},imgBlob={};
+var busy=false,ctl=null,summarizing=false,choices=[],capsReady=false,bannerMsg=null,sysNote="";
+
+/* ================= persistence ================= */
+var K={index:"sw:index",w:function(id){return "sw:w:"+id},l:function(id){return "sw:l:"+id},im:function(id){return "sw:img:"+id}};
+var dbCol=null,dbq={};
+function dbPut(name,obj){if(!dbCol)return;var q=dbq[name]||(dbq[name]={busy:false,next:null,timer:null});q.next=obj;clearTimeout(q.timer);q.timer=setTimeout(function(){dbFlush(name)},900)}
+function dbFlush(name){var q=dbq[name];if(!q||q.busy||!q.next||!dbCol)return;var payload;try{payload=clone(q.next)}catch(e){q.next=null;return}
+  q.next=null;q.busy=true;
+  Promise.resolve().then(function(){return dbCol.doc(name).set(payload)}).catch(function(e){if(e&&e.code==="quota_exceeded")setBanner("保存先の容量がいっぱいです。古い世界やログを減らしてください。",true)})
+    .then(function(){q.busy=false;if(q.next)dbFlush(name)})}
+function dbGet(name){if(!dbCol)return Promise.resolve(null);
+  return Promise.resolve().then(function(){return dbCol.doc(name).get()}).then(function(s){if(!s||!s.exists)return null;var d=s.data();return d?clone(d):null}).catch(function(){return null})}
+function dbDel(name){if(!dbCol)return;Promise.resolve().then(function(){return dbCol.doc(name).delete()}).catch(function(){})}
+function saveIndex(){index.updatedAt=Date.now();lsSet(K.index,index);dbPut("sw_index",index)}
+function saveWorld(){if(!W)return;W.updatedAt=Date.now();lsSet(K.w(W.id),W);dbPut("w_"+W.id,W);
+  var e=entry(W.id),nm=W.name.trim()||"名前のない世界";if(e&&(e.name!==nm||e.sample!==!!W.sample)){e.name=nm;e.sample=!!W.sample;saveIndex()}else if(!index.updatedAt)saveIndex()}
+function trimLog(){while(L.msgs.length>300)L.msgs.shift();
+  var guard=0;while(L.msgs.length>20&&guard++<40&&byteLen(JSON.stringify(L))>180000)L.msgs.splice(0,10)}
+function saveLog(){if(!W)return;if(!index.updatedAt)saveIndex();trimLog();L.updatedAt=Date.now();lsSet(K.l(W.id),L);dbPut("l_"+W.id,L)}
+function entry(id){return index.worlds.filter(function(x){return x.id===id})[0]||null}
+function normIndex(i){if(!i||!Array.isArray(i.worlds))return null;if(!i.settings)i.settings={};
+  if(!i.settings.tier)i.settings.tier="default";if(!i.settings.mainModel)i.settings.mainModel="claude-opus-4-6";if(!i.settings.helperModel)i.settings.helperModel="claude-haiku-5-5";i.settings.mainCustom=str(i.settings.mainCustom);i.settings.helperCustom=str(i.settings.helperCustom);i.settings.model=str(i.settings.model);i.settings.system=str(i.settings.system);if(!i.settings.system.trim())i.settings.system=DEFAULT_SYS;return i}
+function bootLocal(){index=normIndex(lsGet(K.index));
+  if(!index){var s=sampleWorld();index={v:3,updatedAt:0,worlds:[{id:s.id,name:s.name,sample:true}],settings:{tier:"default",model:"",system:""}}}}
+function loadLocalWorld(id){var e=entry(id),lw=lsGet(K.w(id));
+  if(lw){W=normWorld(lw);W.id=id}else if(e&&e.sample){W=sampleWorld(id)}else{W=blankWorld();W.id=id;W.name=e?e.name:""}
+  var ll=lsGet(K.l(id));L=ll?normLog(ll,id):freshLog(W)}
+function pullWorld(id){
+  return Promise.all([dbGet("w_"+id),dbGet("l_"+id)]).then(function(r){
+    if(!W||W.id!==id||busy)return;var rw=r[0],rl=r[1],changed=false;
+    if(rw&&(rw.updatedAt||0)>(W.updatedAt||0)){W=normWorld(rw);W.id=id;lsSet(K.w(id),W);changed=true;if(!L.updatedAt&&!rl)L=freshLog(W)}
+    else if(W.updatedAt&&(!rw||(rw.updatedAt||0)<W.updatedAt))dbPut("w_"+id,W);
+    if(rl&&(rl.updatedAt||0)>(L.updatedAt||0)){L=normLog(rl,id);lsSet(K.l(id),L);changed=true}
+    else if(L.updatedAt&&(!rl||(rl.updatedAt||0)<L.updatedAt))dbPut("l_"+id,L);
+    if(changed)route()})}
+function syncFromDb(){
+  return dbGet("sw_index").then(function(ri){ri=normIndex(ri);
+    if(ri&&ri.worlds.length&&(ri.updatedAt||0)>(index.updatedAt||0)){index=ri;lsSet(K.index,index);
+      if(W&&!entry(W.id)){W=null;L=null}
+      route()}
+    else if(index.updatedAt&&(!ri||(ri.updatedAt||0)<index.updatedAt))dbPut("sw_index",index);
+    if(W)return pullWorld(W.id)})}
+
+/* ================= model access (Anthropic API) ================= */
+var API_URL="https://api.anthropic.com/v1/messages";
+var MODEL_OPTS=[["claude-opus-4-6","Claude Opus 4.6"],["claude-opus-5-5","Claude Opus 5.5（最新のOpus）"],["claude-sonnet-5-5","Claude Sonnet 5.5"],["claude-haiku-5-5","Claude Haiku 5.5（速い・安い）"]];
+var MAX_TOK={1:4000,2:6000,3:8000,4:10000,5:16000};
+var keyStore={apiKey:lsRaw("sw:apikey")||""};
+function saveKey(){lsRawSet("sw:apikey",str(keyStore.apiKey).trim())}
+function mainModel(){var g=index.settings;return str(g.mainCustom).trim()||str(g.mainModel).trim()||"claude-opus-4-6"}
+function helperModel(){var g=index.settings;return str(g.helperCustom).trim()||str(g.helperModel).trim()||"claude-haiku-5-5"}
+function apiErr(status,raw){var j=null;try{j=JSON.parse(raw)}catch(e){}var er=(j&&j.error)||{},t=str(er.type),m=str(er.message||raw).slice(0,300);
+  var code=status===401||t==="authentication_error"?"auth":status===403||t==="permission_error"?"permission":
+    /credit balance/i.test(m)?"credit":status===404||t==="not_found_error"?"model_missing":
+    status===429||t==="rate_limit_error"?"rate_limited":status===529||t==="overloaded_error"?"overloaded":
+    status===413||t==="request_too_large"?"prompt_too_large":"api_error";
+  return {code:code,message:m}}
+function readStream(res,onText,st){var reader=res.body.getReader(),dec=new TextDecoder(),buf="",stop=null;
+  function handle(ev){
+    if(ev.type==="content_block_delta"&&ev.delta&&ev.delta.type==="text_delta"){st.text+=ev.delta.text;if(onText){try{onText({text:st.text,delta:ev.delta.text})}catch(e){}}}
+    else if(ev.type==="message_delta"&&ev.delta&&ev.delta.stop_reason)stop=ev.delta.stop_reason;
+    else if(ev.type==="error"){var x=apiErr(0,JSON.stringify(ev));x.text=st.text;throw x}}
+  function pump(){return reader.read().then(function(r){if(r.done)return;buf+=dec.decode(r.value,{stream:true});
+    var lines=buf.split("\n");buf=lines.pop();
+    lines.forEach(function(line){if(line.indexOf("data:")!==0)return;var d=line.slice(5).trim();if(!d)return;var ev;try{ev=JSON.parse(d)}catch(e){return}handle(ev)});
+    return pump()})}
+  return pump().then(function(){
+    if(!st.text.trim())throw {code:stop==="refusal"?"refused":"empty",message:""};
+    return {text:st.text,truncated:stop==="max_tokens",modelApplied:st.model}})}
+var model={canImg:true,
+  ready:function(){return !!str(keyStore.apiKey).trim()},
+  ask:function(prompt,o){o=o||{};var mdl=o.modelId||(o.tier==="quick"?helperModel():mainModel()),st={text:"",model:mdl};
+    var pre=o.images?Promise.all(o.images.map(blobToDataUrl)):Promise.resolve([]);
+    return pre.then(function(urls){var content=[];
+      urls.forEach(function(u){var m=u&&u.match(/^data:([^;]+);base64,(.*)$/);if(m)content.push({type:"image",source:{type:"base64",media_type:m[1],data:m[2]}})});
+      content.push({type:"text",text:prompt});
+      var body={model:mdl,max_tokens:o.maxTokens||(o.tier==="quick"?3000:8000),stream:true,messages:[{role:"user",content:content}]};
+      if(o.system)body.system=o.system;
+      return fetch(API_URL,{method:"POST",signal:o.signal,headers:{"content-type":"application/json","x-api-key":str(keyStore.apiKey).trim(),
+        "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify(body)})})
+    .then(function(res){if(!res.ok)return res.text().then(function(t){throw apiErr(res.status,t)});return readStream(res,o.onText,st)})
+    .catch(function(e){
+      if(e&&(e.name==="AbortError"||(o.signal&&o.signal.aborted)))throw {code:"cancelled",text:st.text};
+      if(e&&e.code)throw e;
+      throw {code:"network",message:str(e&&e.message),text:st.text}})}};
+var assets=null,downloads=null;
+var idbReady=new Promise(function(res){try{var r=indexedDB.open("simulationworld",1);r.onupgradeneeded=function(){r.result.createObjectStore("img")};r.onsuccess=function(){res(r.result)};r.onerror=function(){res(null)}}catch(e){res(null)}});
+function idbDo(mode,fn){return idbReady.then(function(db){if(!db)throw new Error("noidb");return new Promise(function(res,rej){var tx=db.transaction("img",mode);fn(tx.objectStore("img"));tx.oncomplete=function(){res()};tx.onerror=function(){rej(tx.error)};tx.onabort=function(){rej(tx.error)}})})}
+function loadImages(){return idbReady.then(function(db){if(!db)return;return new Promise(function(res){var req=db.transaction("img","readonly").objectStore("img").openCursor();
+  req.onsuccess=function(){var c=req.result;if(c){imgData[c.key]=c.value;c.continue()}else res()};req.onerror=function(){res()}})}).then(function(){if(currentView()!=="welcome")route()}).catch(function(){})}
+function initCaps(){capsReady=true;try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}loadImages()}
+function errText(e){var c=e&&e.code;
+  return c==="auth"?"APIキーが正しくありません。「API設定」でキーを確認してください。":
+    c==="permission"?"このAPIキーには、この操作の権限がありません。Claude Consoleでキーの設定を確認してください。":
+    c==="credit"?"APIクレジットの残高が足りません。Claude ConsoleのBillingでクレジットを追加してください。":
+    c==="model_missing"?"指定したモデルが見つかりません。「API設定」でモデル名を確認してください。":
+    c==="rate_limited"?"短時間に送りすぎたため制限されました。少し時間をおいてください。":
+    c==="overloaded"?"Anthropicのサーバーが混み合っています。少し時間をおいて作り直してください。":
+    c==="refused"?"この内容では返答が作られませんでした。入力や世界観の書き方を変えて試してください。":
+    c==="empty"?"返答が空でした。もう一度作り直してください。":
+    c==="prompt_too_large"?"送る内容が長すぎます。世界観か「履歴の件数」を減らしてください。":
+    c==="network"?"通信できませんでした。電波の状態を確認して、作り直してください。":
+    "返答を作れませんでした（"+str(e&&e.message).slice(0,120)+"）。最後のメッセージの下から作り直せます。"}
+
+/* ================= images ================= */
+function shrink(file){return new Promise(function(res,rej){var url=URL.createObjectURL(file),im=new Image();
+  im.onload=function(){var m=768,s=Math.min(1,m/Math.max(im.width,im.height)),w=Math.round(im.width*s),hh=Math.round(im.height*s);
+    var c=document.createElement("canvas");c.width=w;c.height=hh;var x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,w,hh);x.drawImage(im,0,0,w,hh);
+    URL.revokeObjectURL(url);var dataUrl=c.toDataURL("image/jpeg",.85);
+    c.toBlob(function(b){b?res({blob:b,dataUrl:dataUrl}):rej(new Error("blob"))},"image/jpeg",.85)};
+  im.onerror=function(){URL.revokeObjectURL(url);rej(new Error("load"))};im.src=url})}
+function srcOf(rec){if(!rec)return null;return imgData[rec.id]||(rec.assetId?"/_blob/"+rec.assetId:lsRaw(K.im(rec.id)))}
+function persistWorld(w){if(w===W)saveWorld();else{w.updatedAt=Date.now();lsSet(K.w(w.id),w);dbPut("w_"+w.id,w)}}
+function storeImage(rec,r,w){imgData[rec.id]=r.dataUrl;imgBlob[rec.id]=r.blob;rec.assetId=null;
+  idbDo("readwrite",function(st){st.put(r.dataUrl,rec.id)}).catch(function(){if(!lsRawSetOk(K.im(rec.id),r.dataUrl))setBanner("画像を保存できませんでした。この端末の保存容量を確認してください。",true)});return;
+  if(assets){Promise.resolve().then(function(){return assets.upload(r.blob)}).then(function(a){if(a&&a.id){rec.assetId=a.id;persistWorld(w)}}).catch(function(){lsRawSet(K.im(rec.id),r.dataUrl)})}
+  else lsRawSet(K.im(rec.id),r.dataUrl)}
+function dropImage(rec){if(!rec)return;var rid=rec.id;delete imgData[rid];delete imgBlob[rid];lsDel(K.im(rid));idbDo("readwrite",function(st){st.delete(rid)}).catch(function(){});
+  if(rec.assetId&&assets)Promise.resolve().then(function(){return assets.delete(rec.assetId)}).catch(function(){})}
+function blobOf(rec){if(!rec)return Promise.resolve(null);if(imgBlob[rec.id])return Promise.resolve(imgBlob[rec.id]);var s=srcOf(rec);if(!s)return Promise.resolve(null);
+  return fetch(s).then(function(r){return r.blob()}).then(function(b){imgBlob[rec.id]=b;return b}).catch(function(){return null})}
+function blobToDataUrl(b){return new Promise(function(res){var f=new FileReader();f.onload=function(){res(String(f.result))};f.onerror=function(){res(null)};f.readAsDataURL(b)})}
+function dataUrlToBlob(u){return fetch(u).then(function(r){return r.blob()})}
+function chImg(ch,id){return ch.images.filter(function(x){return x.id===id})[0]||null}
+function chMain(ch){return chImg(ch,ch.main)||ch.images[0]||null}
+var apNote="";
+function setApNote(t){apNote=t;var el=$("apNote");if(el)el.textContent=t}
+function readAppearance(ch){
+  if(!model.ready()){setApNote("APIキーが入力されていません。先に「API設定」でキーを入力してください。");return}
+  var w=W;
+  blobOf(chMain(ch)).then(function(blob){if(!blob){setApNote("先に画像を追加してください。");return}
+    setApNote("読み取り中…");
+    var p="添付画像はユーザーが創作用に用意したキャラクターの画像です。このキャラクターの外見を、設定資料として日本語で120〜200字にまとめてください。"+
+      "髪・目・服装・体格・表情・全体の雰囲気など、画像から見て取れることだけを書き、人物の特定や名前の推測はしないでください。前置きや見出しは不要で、本文だけを出力してください。";
+    return model.ask(p,{images:[blob],tier:"default"}).then(function(r){var t=(r&&r.text||"").trim();
+      if(t){ch.s.appearance=t;persistWorld(w);var el=$("f_appearance");if(el&&editId===ch.id)el.value=t}
+      setApNote(t?"外見メモを更新しました。":"読み取れませんでした。")})})
+  .catch(function(){setApNote("外見の読み取りに失敗しました。もう一度試してください。")})}
+
+/* ================= chat status ================= */
+function wname(){return W.name.trim()||"名前のない世界"}
+function uname(){return W.user.name.trim()||"あなた"}
+function stageOf(a){return a<=-60?"嫌悪":a<=-20?"警戒":a<20?"顔見知り":a<60?"友好":a<90?"親密":"特別な相手"}
+function findChar(id){return W.chars.filter(function(x){return x.id===id})[0]||null}
+function findCharByName(nm){nm=str(nm).trim();if(!nm)return null;
+  var ex=W.chars.filter(function(c){return c.name.trim()===nm})[0];if(ex)return ex;
+  if(nm.length<2)return null;
+  return W.chars.filter(function(c){var n=c.name.trim();return n.length>=2&&(n.indexOf(nm)>=0||nm.indexOf(n)>=0)})[0]||null}
+function focusChar(){return findChar(W.focus)}
+function setBanner(msg,alert){bannerMsg=msg?{t:msg,a:!!alert}:null;renderBanner()}
+function renderBanner(){var b=$("banner");
+  var m=bannerMsg||(W&&W.sample?{t:"サンプルの世界です。ロビーの「新規世界作成」から自分の世界を作れます。",a:false}:null);
+  if(!m){b.hidden=true;return}b.hidden=false;b.textContent=m.t;b.className="banner"+(m.a?" alert":"")}
+function setSys(t){sysNote=t||"";var e=$("sysNote");e.hidden=!sysNote;e.textContent=sysNote}
+function presentChars(){return (W.present||[]).map(findChar).filter(Boolean)}
+function renderPortrait(){var f=focusChar(),rec=f?(chImg(f,f.cur)||chMain(f)):null,who=f;
+  if(!rec){rec=W.image;who=null}
+  if(!srcOf(rec)){var p=presentChars().filter(function(c){return srcOf(chImg(c,c.cur)||chMain(c))})[0];if(p){rec=chImg(p,p.cur)||chMain(p);who=p}}
+  var src=srcOf(rec),im=$("portrait");
+  if(!src){im.hidden=true;im.removeAttribute("data-src");$("placeholder").hidden=false;return}
+  im.onerror=function(){im.hidden=true;$("placeholder").hidden=false};
+  if(im.getAttribute("data-src")!==src){im.src=src;im.setAttribute("data-src",src)}
+  im.alt=who?who.name:wname();im.hidden=false;$("placeholder").hidden=true}
+function renderStatus(){if(!W)return;
+  var list=$("presentList"),pcs=presentChars();list.textContent="";
+  if(!pcs.length)list.appendChild(h("span",{class:"hint",text:"まだ誰も登場していません"}));
+  pcs.forEach(function(c){var a=c.affinity,fill=h("i",{class:a>=0?"pos":"neg",style:"left:"+(a>=0?50:50+a/2)+"%;width:"+Math.abs(a)/2+"%"});
+    list.appendChild(h("button",{class:"prow",type:"button","aria-pressed":c.id===W.focus?"true":"false","aria-label":c.name+"の画像を表示",
+      onclick:function(){W.focus=W.focus===c.id?null:c.id;saveWorld();renderStatus()}},[
+      h("span",{class:"prow-top"},[h("span",null,[c.name,c.mood?h("span",{class:"prow-sub",text:"　"+c.mood}):null]),h("span",{class:a>0?"pos":a<0?"neg":"",text:signed(a)})]),
+      h("span",{class:"pm"},[fill,h("b")])]))});
+  $("stScene").textContent=W.scene||"—";$("stTime").textContent=W.time||"—";
+  var box=$("customParams");box.textContent="";
+  W.params.forEach(function(p){if(!str(p.name).trim())return;var min=+p.min||0,max=+p.max||0,val=clamp(+p.val||0,min,Math.max(min,max)),pct=max>min?(val-min)/(max-min)*100:0;
+    box.appendChild(h("div",{class:"pbar"},[h("div",{class:"pbar-top"},[h("span",{text:p.name}),h("span",{text:val+" / "+max})]),
+      h("div",{class:"pbar-track"},h("div",{class:"pbar-fill",style:"width:"+pct+"%"}))]))});
+  renderPortrait();renderBanner()}
+
+/* ================= log ================= */
+function msgEl(m,i){var isC=m.r==="c",last=i===L.msgs.length-1;
+  var w=h("div",{class:"msg "+(isC?"char":"user")});
+  w.appendChild(h("span",{class:"who",text:isC?wname():uname()}));
+  var body=h("div",{class:"body",text:m.t});w.appendChild(body);
+  var meta=h("div",{class:"meta"});
+  if(isC&&m.cd){W.chars.forEach(function(c){var v=m.cd[c.id];if(v)meta.appendChild(h("span",{class:"chip "+(v>0?"delta-pos":"delta-neg"),text:c.name+" "+signed(v)}))})}
+  if(isC&&m.pd){W.params.forEach(function(p){var v=m.pd[p.id];if(v)meta.appendChild(h("span",{class:"chip",text:p.name+" "+signed(v)}))})}
+  if(last&&!isC&&!busy)meta.appendChild(h("button",{class:"mini strong",type:"button",text:"返答を作る",onclick:function(){generate("reply")}}));
+  var acts=h("span",{class:"meta",hidden:true});
+  acts.appendChild(h("button",{class:"mini",type:"button",text:"編集",onclick:function(){startEdit(m,w)}}));
+  acts.appendChild(h("button",{class:"mini",type:"button",text:"削除",onclick:function(){deleteMsg(m)}}));
+  if(last&&isC){
+    if(i>0&&L.msgs[i-1].r==="u")acts.appendChild(h("button",{class:"mini",type:"button",text:"再生成",onclick:function(){regenerate()}}));
+    acts.appendChild(h("button",{class:"mini",type:"button",text:"続きを書く",onclick:function(){generate("continue")}}))}
+  meta.appendChild(h("button",{class:"mini",type:"button",text:"…","aria-label":"このメッセージの操作",onclick:function(){acts.hidden=!acts.hidden}}));
+  meta.appendChild(acts);w.appendChild(meta);return w}
+function renderLog(){if(!W)return;var l=$("log");l.textContent="";
+  if(!L.msgs.length){l.appendChild(h("div",{class:"empty"},[
+      h("span",{text:W.lore.trim()?"世界観はできています。物語を始めましょう。":"まだ世界観が空です。「世界」ページで世界観を書くと、ここで物語を始められます。"}),
+      W.lore.trim()&&!busy?h("button",{class:"btn",type:"button",text:"物語を始める",onclick:function(){generate("open")}}):null,
+      W.lore.trim()?h("span",{text:"下の入力欄に最初の行動を書いて始めることもできます。"}):h("a",{class:"btn ghost",href:"#room",text:"世界観を書く"})]));
+    renderQuick();return}
+  L.msgs.forEach(function(m,i){l.appendChild(msgEl(m,i))});scrollLog();renderQuick()}
+function scrollLog(){var l=$("log");l.scrollTop=l.scrollHeight}
+function startEdit(m,w){if(busy)return;var ta=h("textarea",{class:"msg-edit","aria-label":"メッセージを編集"});ta.value=m.t;
+  var row=h("div",{class:"meta"},[
+    h("button",{class:"mini strong",type:"button",text:"保存",onclick:function(){var v=ta.value.trim();if(v){m.t=v;saveLog()}renderLog()}}),
+    h("button",{class:"mini",type:"button",text:"やめる",onclick:function(){renderLog()}})]);
+  w.textContent="";w.appendChild(ta);w.appendChild(row);ta.focus()}
+function revert(m){if(m.r!=="c")return;
+  if(m.cd)W.chars.forEach(function(c){if(m.cd[c.id])c.affinity=clamp(c.affinity-m.cd[c.id],-100,100)});
+  if(m.pd)W.params.forEach(function(p){if(m.pd[p.id])p.val=clamp((+p.val||0)-m.pd[p.id],+p.min||0,+p.max||0)})}
+function deleteMsg(m){if(busy)return;var i=L.msgs.indexOf(m);if(i<0)return;revert(m);L.msgs.splice(i,1);choices=[];saveLog();saveWorld();renderLog();renderStatus()}
+function regenerate(){if(busy)return;var m=L.msgs[L.msgs.length-1];if(!m||m.r!=="c")return;revert(m);L.msgs.pop();if(W.turns>0)W.turns--;choices=[];saveLog();saveWorld();renderLog();renderStatus();generate("reply")}
+function renderQuick(){var q=$("quick");q.textContent="";if(!W){q.hidden=true;return}
+  choices.forEach(function(c){q.appendChild(h("button",{class:"qbtn choice",type:"button",text:c,onclick:function(){var t=$("input");t.value=c;autosize();t.focus()}}))});
+  W.shortcuts.forEach(function(s){if(!str(s.label).trim()||!str(s.text).trim())return;
+    q.appendChild(h("button",{class:"qbtn",type:"button",text:s.label,onclick:function(){var t=$("input");t.value=(t.value?t.value+"\n":"")+"（"+s.text+"）";autosize();t.focus()}}))});
+  q.hidden=!q.childNodes.length}
+
+/* ================= memory selection ================= */
+function kwScore(m,ctx){var sc=0;(m.tags||[]).concat([m.title]).forEach(function(t){t=str(t).trim();if(t.length>=2&&ctx.indexOf(t)>=0)sc+=2});return sc}
+function pickByKeyword(rest,ctx){return rest.map(function(m,i){return {m:m,s:kwScore(m,ctx)+i/1000}}).sort(function(a,b){return b.s-a.s}).slice(0,3).map(function(x){return x.m})}
+function pickMemories(ctx,signal){
+  var pinned=W.mem.filter(function(m){return m.pin}),rest=W.mem.filter(function(m){return !m.pin});
+  if(rest.length<=3)return Promise.resolve(pinned.concat(rest));
+  if(W.style.pick!=="ai")return Promise.resolve(pinned.concat(pickByKeyword(rest,ctx)));
+  var lines=rest.map(function(m,i){return (i+1)+". "+m.title+(m.tags&&m.tags.length?"（"+m.tags.join("、")+"）":"")});
+  var p="物語の記憶から、今の場面に関係するものを選ぶ作業です。\n\n# 記憶の見出し一覧\n"+lines.join("\n")+"\n\n# 今の場面\n"+ctx.slice(0,1500)+
+    "\n\n今の場面に最も関係が深い記憶を最大3つ選び、番号だけをカンマ区切りで答えてください（例: 2,5,7）。関係するものがなければ「なし」とだけ答えてください。";
+  return model.ask(p,{tier:"quick",signal:signal}).then(function(r){var seen={},out=[];
+    (str(r.text).match(/\d+/g)||[]).forEach(function(n){var i=parseInt(n,10)-1;if(rest[i]&&!seen[i]&&out.length<3){seen[i]=1;out.push(rest[i])}});
+    return pinned.concat(out)})
+  .catch(function(e){if(e&&e.code==="cancelled")throw e;return pinned.concat(pickByKeyword(rest,ctx))})}
+function matchBook(ctx){return W.book.filter(function(l){return str(l.text).trim()&&str(l.keys).split(/[,、\s]+/).some(function(k){return k.length>=1&&ctx.indexOf(k)>=0})}).slice(0,6)}
+
+/* ================= prompt ================= */
+function hasDetail(c){return CH_KEYS.some(function(k){return c.s[k].trim()})}
+function charBlock(c){var A=["## "+c.name];
+  CH_FIELDS.forEach(function(f){var v=c.s[f.k].trim();if(v)A.push("- "+f.label+": "+v)});
+  if(c.s.appearance.trim())A.push("- 外見: "+c.s.appearance.trim());
+  if(c.s.examples.trim())A.push("- セリフの例: "+c.s.examples.trim());
+  A.push("- 主人公への好感度: "+c.affinity+"（"+stageOf(c.affinity)+"）"+(c.mood?"、気分: "+c.mood:""));return A.join("\n")}
+function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||"主人公",A=[],st=W.style;
+  A.push("以下の世界を舞台にした、対話型シミュレーションの本文を書いてください。これはユーザーが個人で楽しむ創作です。");
+  A.push("","# 世界観",W.lore.trim()||"（未設定。主人公の発言から自然な舞台を補ってください）");
+  A.push("","# 主人公（ユーザー）","- 名前: "+un);if(W.user.profile.trim())A.push("- 設定: "+W.user.profile.trim());
+  var named=W.chars.filter(function(c){return c.name.trim()});
+  var pres=W.present||[];
+  var detailed=named.filter(function(c){return hasDetail(c)&&(pres.indexOf(c.id)>=0||ctx.indexOf(c.name.trim())>=0)}).slice(0,6);
+  if(detailed.length<3)named.forEach(function(c){if(detailed.length<3&&hasDetail(c)&&detailed.indexOf(c)<0)detailed.push(c)});
+  var others=named.filter(function(c){return detailed.indexOf(c)<0}).slice(0,30);
+  if(detailed.length){A.push("","# 登録キャラクター（登場させるときは、この設定を世界観の一般知識より優先する）");detailed.forEach(function(c){A.push(charBlock(c))})}
+  if(others.length){A.push("","# そのほかの既知の人物");others.forEach(function(c){A.push("- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":"")+" 好感度"+c.affinity)})}
+  if(W.note.trim())A.push("","# 常に守るメモ",W.note.trim());
+  var book=matchBook(ctx);if(book.length){A.push("","# 関連する設定資料");book.forEach(function(l){A.push("- "+l.text.trim())})}
+  if(W.lt.trim())A.push("","# 長期記憶（これまでの要点）",W.lt.trim());
+  if(picked.length){A.push("","# 今の場面に関係する過去の出来事");picked.forEach(function(m){A.push("- 【"+m.title+"】"+m.sum)})}
+  A.push("","# 現在の状態");if(W.scene)A.push("- 場所・状況: "+W.scene);if(W.time)A.push("- 時間: "+W.time);
+  var ps=W.params.filter(function(p){return str(p.name).trim()});
+  ps.forEach(function(p){A.push("- "+p.name+": "+p.val+"（"+p.min+"〜"+p.max+"）"+(p.desc?" … "+p.desc:""))});
+  A.push("","# この世界の書き方",
+    "- 登録キャラクターを登場させるときは、登録された設定を最優先にする。",
+    st.narr==="serif"?"- 会話中心で書く。セリフは「名前「セリフ」」の形にし、地の文は最小限にする。":"- 小説風に書く。地の文で情景と人物の仕草を描き、セリフは「名前「セリフ」」の形にする。",
+    "- 本文の長さ: "+LEN_TXT[normLen(st.len)]+"（最後のSTATUS行は字数に含めない）。指定より大幅に短くしない。",
+    "- ユーザーの発言のうち（）や＊＊で囲まれた部分は、行動の描写や場面への指示として扱う。",
+    "- 特定の人物との一対一の会話に固定しない。ユーザーの入力に複数の人物への言動が含まれていれば、関わった人物それぞれの反応を書く。入力で触れられていない人物も、その場にいれば自分の意思で動いてよい。誰にも向けられていない行動には、場面や周囲の反応で応える。",
+    "- 各人物は、主人公への好感度が低いほどそっけなく警戒し、高いほど親しく打ち解ける。過去の出来事や長期記憶と矛盾させない。",
+    "- 登場した人物ごとに、今回のやり取りで主人公への好感度がどう変わったかを-10〜+10の整数で判定する。普通のやり取りは-2〜+3程度。大きく動かすのは特別な出来事のときだけ。");
+  var exName=detailed[0]?detailed[0].name:"人物名",ex={scene:"場所や状況",time:"時間帯",cast:[{name:exName,affinity:2,mood:"うれしい"}]};
+  var exprs=detailed.map(function(c){var ls=c.images.map(function(x){return str(x.label).trim()}).filter(function(x,i,a){return x&&a.indexOf(x)===i});return ls.length>1?c.name+"（"+ls.join(" / ")+"）":null}).filter(Boolean);
+  if(exprs.length)ex.cast[0].expression="表情";
+  if(ps.length){ex.params={};ps.forEach(function(p){ex.params[p.name]=0})}
+  if(st.choices)ex.choices=["（候補1）","（候補2）","（候補3）"];
+  A.push("- 返答の最後に改行して、次の形式の1行を必ず付ける: <<STATUS "+JSON.stringify(ex)+">>",
+    "  - scene: 今の場所や状況（15字以内）。time: 時間帯や日付（10字以内）。",
+    "  - cast: 返答の終わりの時点でその場にいる、名前のある人物すべて（最大6人、端役は含めない）。誰もいなければ空の配列。name は登録名があればそのまま使う。affinity は主人公と関わりがなければ0。mood は気分（8文字以内）。");
+  if(exprs.length)A.push("  - expression: 次の人物だけに付ける。それぞれの選択肢から1つ選ぶ: "+exprs.join("、"));
+  if(ps.length)A.push("  - params: 各パラメータの変化量（整数、変化がなければ0）。");
+  if(st.choices)A.push("  - choices: "+un+"の次の行動や発言の候補を3つ、それぞれ30字以内で。方向性を変えること。");
+  A.push("  - この行以外に数値やステータスの話は書かない。");
+  var hist=L.msgs.slice(Math.max(0,histEnd-st.hist),histEnd);
+  if(hist.length){A.push("","# 直近のやり取り");hist.forEach(function(e){A.push((e.r==="u"?"【"+un+"】":"【語り】")+e.t)})}
+  if(kind==="open")A.push("","# 指示","物語の冒頭の場面を書いてください。"+(W.opening.trim()?"舞台は「"+W.opening.trim()+"」です。":"世界観にふさわしい導入の場面を選んでください。")+un+"がその場にいて、最初の行動を選べるところで止めること。");
+  else if(kind==="continue")A.push("","# 指示",un+"はまだ行動していません。直前の場面の続きを、内容を繰り返さずに自然に書き足してください。");
+  else A.push("","# "+un+"の最新の行動・発言",latest,"","これを受けて、世界と登場人物がどう反応するかを書いてください。");
+  return A.join("\n")}
+function cleanReply(t){return str(t).replace(/<<\s*STATUS[\s\S]*$/,"").replace(/<{1,2}\s*[A-Z]*$/,"").trim()}
+function extractJson(t){t=str(t);var a=t.indexOf("{"),b=t.lastIndexOf("}");if(a<0||b<=a)return null;
+  try{return JSON.parse(t.slice(a,b+1).replace(/:\s*\+(\d)/g,": $1"))}catch(e){return null}}
+function parseStatus(t){var m=str(t).match(/<<\s*STATUS([\s\S]*)$/);if(!m)return {};var j=extractJson(m[1]);return j&&typeof j==="object"?j:{}}
+
+/* ================= conversation ================= */
+function setBusy(b){busy=b;$("sendBtn").textContent=b?"停止":"送信"}
+function notReady(){setBanner("APIキーが入力されていません。入口の「API設定」でキーを入力してください。",true)}
+function send(){var inp=$("input"),text=inp.value.trim();if(busy){if(ctl)ctl.abort();return}if(!text||!W)return;
+  if(!model.ready()){notReady();return}
+  L.msgs.push({id:uid(),r:"u",t:text});inp.value="";autosize();choices=[];saveLog();renderLog();generate("reply")}
+function generate(kind){if(busy||!W)return;if(!model.ready()){notReady();return}
+  var msgs=L.msgs,latest=null,histEnd=msgs.length,w=W,l=L;
+  if(kind==="reply"){var last=msgs[msgs.length-1];if(!last||last.r!=="u")return;latest=last.t;histEnd=msgs.length-1}
+  else if(kind==="continue"&&!msgs.length)return;
+  setBanner(null);setBusy(true);ctl=new AbortController();var signal=ctl.signal;choices=[];renderLog();
+  if(kind==="open")$("log").textContent="";
+  var pend=h("div",{class:"msg char"},[h("span",{class:"who",text:wname()})]),body=h("div",{class:"body",text:"…"});pend.appendChild(body);$("log").appendChild(pend);scrollLog();
+  var ctx=(latest||"")+"\n"+msgs.slice(Math.max(0,histEnd-6),histEnd).map(function(m){return m.t}).join("\n")+"\n"+W.scene;
+  var used=[],g=index.settings;
+  pickMemories(ctx,signal).then(function(picked){used=picked;
+    return model.ask(buildPrompt(kind,latest,histEnd,picked,ctx),{system:str(g.system).trim()||DEFAULT_SYS,maxTokens:MAX_TOK[normLen(W.style.len)],signal:signal,
+      onText:function(o){var t=cleanReply(o&&o.text);if(t){body.textContent=t;scrollLog()}}})})
+  .then(function(r){if(w!==W||l!==L)return;applyReply(kind,r&&r.text||"",used,r)})
+  .catch(function(e){if(w!==W||l!==L)return;var part=cleanReply(e&&e.text);
+    if(e&&e.code==="cancelled"){if(part){L.msgs.push({id:uid(),r:"c",t:part});saveLog()}}
+    else setBanner(errText(e),true)})
+  .then(function(){setBusy(false);ctl=null;if(w===W)renderLog();maybeSummarize(false)})}
+function applyReply(kind,full,used,r){var reply=cleanReply(full)||"……",st=parseStatus(full),m={id:uid(),r:"c",t:reply},un=W.user.name.trim();
+  var cd={},anyC=false,pres=[];
+  (Array.isArray(st.cast)?st.cast.slice(0,6):[]).forEach(function(e){if(!e||typeof e!=="object")return;var nm=str(e.name).trim().slice(0,30);
+    if(!nm||nm===un||nm==="主人公"||nm==="人物名")return;var ch=findCharByName(nm);
+    if(!ch){if(!W.style.autoCast||W.chars.length>=40)return;ch=blankCharRec();ch.name=nm;ch.auto=true;W.chars.push(ch)}
+    if(pres.indexOf(ch.id)<0)pres.push(ch.id);
+    var b=ch.affinity;ch.affinity=clamp(b+clamp(int(e.affinity),-10,10),-100,100);if(ch.affinity!==b){cd[ch.id]=ch.affinity-b;anyC=true}
+    if(e.mood)ch.mood=str(e.mood).slice(0,12);
+    if(e.expression){var lab=str(e.expression).trim(),im=ch.images.filter(function(x){return str(x.label).trim()===lab})[0];if(im)ch.cur=im.id}});
+  if(anyC)m.cd=cd;
+  if(Array.isArray(st.cast))W.present=pres;
+  var pd={},anyP=false;
+  W.params.forEach(function(p){var dv=st.params&&typeof st.params==="object"?int(st.params[p.name]):0;if(!dv)return;
+    var b=+p.val||0;p.val=clamp(b+dv,+p.min||0,+p.max||0);if(p.val!==b){pd[p.id]=p.val-b;anyP=true}});
+  if(anyP)m.pd=pd;
+  if(st.scene)W.scene=str(st.scene).slice(0,30);if(st.time)W.time=str(st.time).slice(0,20);
+  choices=W.style.choices&&Array.isArray(st.choices)?st.choices.slice(0,3).map(function(x){return str(x).slice(0,60)}).filter(Boolean):[];
+  if(kind==="reply")W.turns++;
+  L.msgs.push(m);saveLog();saveWorld();renderStatus();
+  var bits=[],mod=r&&(r.modelApplied||({quick:"ライト",default:"スタンダード",complex:"ハイ"})[r.modelTierApplied]);
+  if(mod)bits.push("モデル: "+mod);if(used&&used.length)bits.push("参照した記憶: "+used.map(function(x){return x.title}).join("、"));
+  setSys(bits.join(" ／ "))}
+
+/* ================= summarizing ================= */
+var memNote="";
+function setMemNote(t){memNote=t;var e=$("memNote");if(e)e.textContent=t}
+function maybeSummarize(force){if(summarizing||busy||!W)return;if(!model.ready()){if(force)setMemNote("この表示ではClaudeに接続できません。");return}
+  var w=W,l=L,un=l.msgs.filter(function(m){return !m.s}),keep=6,chunk=w.style.chunk,target;
+  if(force){target=un.slice(0,40);if(target.length<2){setMemNote("まだ要約できる会話がありません。");return}}
+  else{if(un.length<chunk+keep)return;target=un.slice(0,chunk)}
+  summarizing=true;setMemNote("会話を要約しています…");var u=w.user.name.trim()||"主人公";
+  var p="対話型の物語の記憶を整理する作業です。主人公は「"+u+"」です。\n\n# 現在の長期記憶\n"+(w.lt.trim()||"（まだありません）")+
+    "\n\n# 新しく要約するやり取り\n"+target.map(function(m){return (m.r==="u"?"【"+u+"】":"【語り】")+m.t}).join("\n").slice(0,14000)+
+    "\n\n次のJSONだけを出力してください。\n{\"title\":\"この部分の出来事を表す見出し（15字以内）\",\"summary\":\"何が起きたか、誰と何を話したかの要約（200字以内）\",\"tags\":[\"あとで探すためのキーワード（人名・場所・話題）を3〜6個\"],\"longterm\":\"現在の長期記憶に今回の内容を反映した更新版。重要な事実、人物との関係の変化、約束、主人公の立場の変化だけを箇条書きで500字以内\"}";
+  model.ask(p,{tier:"quick"}).then(function(r){var j=extractJson(r&&r.text);if(!j||!j.summary)throw new Error("json");
+    w.mem.push({id:uid(),title:str(j.title||"無題").slice(0,30),sum:str(j.summary).slice(0,500),tags:(Array.isArray(j.tags)?j.tags:[]).slice(0,8).map(function(x){return str(x).slice(0,20)}),pin:false,ts:Date.now()});
+    if(j.longterm)w.lt=str(j.longterm).slice(0,1800);
+    target.forEach(function(m){m.s=true});
+    var guard=0;while(w.mem.length>80&&guard++<100){var idx=-1;for(var i=0;i<w.mem.length;i++){if(!w.mem[i].pin){idx=i;break}}if(idx<0)break;w.mem.splice(idx,1)}
+    if(w===W){saveWorld();saveLog();if(currentView()==="memory")renderMemory()}else{persistWorld(w);l.updatedAt=Date.now();lsSet(K.l(w.id),l);dbPut("l_"+w.id,l)}
+    setMemNote("記憶を1件追加しました。")})
+  .catch(function(){setMemNote(force?"要約に失敗しました。少し時間をおいて試してください。":"")})
+  .then(function(){summarizing=false})}
+
+/* ================= form helpers ================= */
+function bind(obj,key,o){o=o||{};var e=h(o.area?"textarea":"input",{id:o.id||("i"+(++seq))});if(!o.area)e.type=o.num?"number":"text";
+  if(o.cls)e.className=o.cls;if(o.ph)e.placeholder=o.ph;if(o.label)e.setAttribute("aria-label",o.label);
+  e.value=obj[key]==null?"":obj[key];
+  e.addEventListener("input",function(){var v=e.value;if(o.num){v=parseFloat(v);if(isNaN(v))return}obj[key]=v;(o.save||saveWorld)();if(o.after)o.after()});return e}
+function field(label,el,hint){return h("div",{class:"field"},[h("label",{text:label,htmlFor:el.id}),el,hint?h("span",{class:"hint",text:hint}):null])}
+function sel(obj,key,opts,save){var e=h("select",{id:"i"+(++seq)});opts.forEach(function(o){var op=h("option",{text:o[1]});op.value=o[0];e.appendChild(op)});
+  e.value=String(obj[key]);e.addEventListener("change",function(){obj[key]=e.value;(save||saveWorld)()});return e}
+function check(obj,key,label,after){var e=h("input",{type:"checkbox",id:"i"+(++seq)});e.checked=!!obj[key];
+  e.addEventListener("change",function(){obj[key]=e.checked;saveWorld();if(after)after()});return h("label",{class:"check"},[e,label])}
+function armed(label,fn,cls){var on=false,t=null,b=h("button",{class:cls||"btn ghost",type:"button",text:label});
+  b.addEventListener("click",function(){if(!on){on=true;b.textContent="もう一度押すと実行";t=setTimeout(function(){on=false;b.textContent=label},4000);return}
+    clearTimeout(t);on=false;b.textContent=label;fn()});return b}
+function touched(){if(W&&W.sample){W.sample=false}}
+
+/* ================= API settings ================= */
+function renderApi(){var v=$("view-api");v.textContent="";var g=index.settings;
+  v.appendChild(h("h2",{class:"sec",text:"APIキー"}));
+  v.appendChild(h("p",{class:"note",text:"Claude Consoleで作ったAPIキー（sk-ant- で始まる文字列）を入力します。キーはこの端末のブラウザの中にだけ保存され、Anthropicへの問い合わせ以外には使われません。世界の書き出しファイルにも含まれません。"}));
+  var key=bind(keyStore,"apiKey",{save:saveKey,ph:"sk-ant-..."});key.type="password";key.setAttribute("autocomplete","off");key.setAttribute("autocapitalize","off");key.setAttribute("spellcheck","false");
+  v.appendChild(field("APIキー",key));
+  var note=h("span",{class:"hint",id:"testNote"});
+  v.appendChild(h("div",{class:"row"},[
+    h("button",{class:"btn ghost",type:"button",text:"キーを表示",onclick:function(){key.type=key.type==="password"?"text":"password";this.textContent=key.type==="password"?"キーを表示":"キーを隠す"}}),
+    h("button",{class:"btn ghost",type:"button",text:"接続テスト",onclick:function(){if(!model.ready()){note.textContent="先にキーを入力してください。";return}
+      note.textContent="テスト中…（"+mainModel()+"）";
+      model.ask("接続テストです。「接続OK」とだけ返してください。",{modelId:mainModel(),maxTokens:200}).then(function(r){note.textContent="接続できました（"+mainModel()+"）。返答: "+str(r.text).trim().slice(0,40)}).catch(function(e){note.textContent=errText(e)})}}),
+    note]));
+  v.appendChild(h("h2",{class:"sec",text:"返答に使うモデル"}));
+  v.appendChild(field("物語の返答",sel(g,"mainModel",MODEL_OPTS,saveIndex),"すべての世界で共通です。上位のモデルほど1通あたりの料金が上がります"));
+  v.appendChild(field("モデル名を手入力（任意）",bind(g,"mainCustom",{ph:"例: claude-opus-4-6",save:saveIndex}),"書いた場合は上の選択より優先されます。新しいモデルが出たときに使います"));
+  v.appendChild(field("記憶の選択と要約",sel(g,"helperModel",MODEL_OPTS,saveIndex),"裏方の作業です。安いモデルで十分です"));
+  v.appendChild(field("裏方のモデル名を手入力（任意）",bind(g,"helperCustom",{ph:"例: claude-haiku-5-5",save:saveIndex})));
+  v.appendChild(h("p",{class:"hint",text:"使った分の料金と残高は、Claude ConsoleのBillingページで確認できます。"}));
+  v.appendChild(h("h2",{class:"sec",text:"書き手への基本指示（カスタム指示）"}));
+  v.appendChild(h("p",{class:"note",text:"すべての世界で、毎回いちばん上位の指示として送られます。AIがどういう立場で書くか、あなたの入力をどう扱うか、文章の癖や避けたい表現などをここで決めます。世界ごとの決まりは、各世界の「記憶」ページの「常に守るメモ」に書いてください。"}));
+  var sysEl=bind(g,"system",{area:1,cls:"tall",save:saveIndex});
+  v.appendChild(field("基本指示",sysEl,"空欄にすると初期の指示が使われます。好感度やステータスを返す形式の指示は、画面の動作に必要なので別に固定で送られます。APIのシステムプロンプトとして送られます"));
+  v.appendChild(h("div",{class:"row"},armed("初期の指示に戻す",function(){g.system=DEFAULT_SYS;sysEl.value=DEFAULT_SYS;saveIndex()})))}
+
+/* ================= lobby ================= */
+var ioNote="";
+function setIo(t){ioNote=t;var e=$("ioNote");if(e)e.textContent=t}
+function openWorld(id,dest){if(busy)return;loadLocalWorld(id);editId=null;choices=[];sysNote="";bannerMsg=null;memNote="";location.hash=dest||"#chat";route();pullWorld(id)}
+function createWorld(){if(busy)return;var w=blankWorld();w.name="新しい世界";index.worlds.push({id:w.id,name:w.name,sample:false});W=w;L=freshLog(w);editId=null;choices=[];sysNote="";bannerMsg=null;saveIndex();saveWorld();location.hash="#room";route()}
+function removeWorld(id){if(busy)return;var lw=lsGet(K.w(id));
+  if(lw){dropImage(lw.image);(lw.chars||[]).forEach(function(c){(c.images||[]).forEach(dropImage)})}
+  index.worlds=index.worlds.filter(function(x){return x.id!==id});lsDel(K.w(id));lsDel(K.l(id));
+  if(dbq["w_"+id])dbq["w_"+id].next=null;if(dbq["l_"+id])dbq["l_"+id].next=null;dbDel("w_"+id);dbDel("l_"+id);
+  if(W&&W.id===id){W=null;L=null}saveIndex();renderLobby()}
+function renderLobby(){var v=$("view-lobby");v.textContent="";
+  v.appendChild(h("h2",{class:"sec",text:"世界を選ぶ"}));
+  v.appendChild(h("p",{class:"note",text:"世界ごとに部屋が分かれています。ある世界の設定・キャラクター・会話・記憶は、ほかの世界には影響しません。"}));
+  v.appendChild(h("div",{class:"row"},h("button",{class:"btn",type:"button",text:"新規世界作成",onclick:createWorld})));
+  var box=h("div");v.appendChild(box);
+  if(!index.worlds.length)box.appendChild(h("p",{class:"hint",text:"まだ世界がありません。「新規世界作成」から始めてください。"}));
+  index.worlds.forEach(function(e){box.appendChild(h("div",{class:"listrow"},[
+    h("span",{class:"who"},[h("strong",{text:e.name||"名前のない世界"}),e.sample?h("span",{class:"badge",text:"サンプル"}):null]),
+    h("span",{class:"row",style:"margin:0"},[
+      h("button",{class:"mini strong",type:"button",text:"入る",onclick:function(){openWorld(e.id,"#chat")}}),
+      h("button",{class:"mini",type:"button",text:"設定",onclick:function(){openWorld(e.id,"#room")}}),
+      armed("削除",function(){removeWorld(e.id)},"mini")])]))});
+  v.appendChild(h("h2",{class:"sec",text:"用意された世界"}));
+  v.appendChild(h("p",{class:"note",text:"設定済みの世界です。「追加」を押すと上の世界リストに入り、ふつうの世界と同じように編集できます。何度でも追加できます。"}));
+  PRESETS.forEach(function(p){v.appendChild(h("div",{class:"listrow"},[
+    h("span",{class:"who"},h("span",null,[h("strong",{text:p.name}),h("div",{class:"hint",text:p.desc})])),
+    h("button",{class:"mini strong",type:"button",text:"追加",onclick:function(){addPreset(p)}})]))});
+  v.appendChild(h("h2",{class:"sec",text:"世界を読み込む"}));
+  v.appendChild(h("p",{class:"note",text:"この画面で書き出した世界のファイルを、新しい世界として追加します。"}));
+  var fin=h("input",{type:"file",accept:".json,application/json",class:"sr-only",id:"impFile"});
+  fin.addEventListener("change",function(){var f=fin.files&&fin.files[0];fin.value="";if(f)importFile(f)});
+  v.appendChild(h("div",{class:"row"},[fin,h("label",{class:"btn ghost",htmlFor:"impFile",text:"ファイルから読み込む"}),h("span",{class:"hint",id:"ioNote",text:ioNote})]))}
+
+/* ================= built-in preset worlds ================= */
+function mkChar(name,o){var c=blankCharRec();c.name=name;for(var k in o){if(c.s[k]!==undefined)c.s[k]=o[k]}return c}
+var PRESETS=[
+ {key:"jjk-early",name:"呪術廻戦（序盤・虎杖入学直後）",desc:"2018年6月の東京校。主人公は編入してきた一年生という設定です。",build:function(){var w=blankWorld();
+  w.name="呪術廻戦（序盤）";
+  w.lore=["漫画・アニメ『呪術廻戦』の世界。舞台は2018年6月の日本。",
+   "人間の負の感情から漏れ出た呪力が積もり、形を持ったものが「呪霊」。普通の人には見えず、原因不明の死や行方不明の多くは呪霊の仕業とされる。呪力を操って呪霊を祓う者が「呪術師」で、その存在は一般社会には伏せられている。",
+   "呪術師を育て、任務を割り振る拠点が、東京と京都にある呪術高等専門学校（表向きは私立の宗教系学校）。東京校は東京郊外の山中にあり、生徒は寮で暮らす。学生も実戦の任務に出る。上層部は保守的で、御三家（五条・禪院・加茂）が強い発言力を持つ。",
+   "現在の時点: 宮城の高校生だった虎杖悠仁が、特級呪物「両面宿儺の指」を飲み込んで宿儺の器となり、東京校の一年生として入学した直後。上層部は虎杖の死刑を決めたが、五条悟の提案で、すべての指を取り込むまで執行が猶予されている。一年生は虎杖・伏黒恵・釘崎野薔薇の三人がそろったばかり。",
+   "物語はまだ序盤。この時点より先の原作の展開、人物の正体や生死は、まだ起きていないこと・誰も知らないこととして扱い、先取りして語らない。"].join("\n");
+  w.user.profile="東京校に編入してきたばかりの一年生。虎杖たちと同学年。（術式・等級・経歴は自由に書き換えてください）";
+  w.opening="2018年6月、呪術高専東京校。虎杖の入学から数日後";w.scene="呪術高専東京校";w.time="2018年6月・朝";
+  w.greeting="山あいに建つ呪術高専東京校は、朝の空気がまだ冷たかった。\n\n石段を上りきった先のグラウンドに、制服姿の三人がいる。虎杖は自販機の前で何を買うか悩んでいて、釘崎はその横で「早くしなさいよ」と急かしている。伏黒は少し離れたベンチで、黙って文庫本を読んでいた。\n\n集合時間はとうに過ぎているが、担任の五条の姿はまだない。";
+  w.note="・物語は序盤。原作の先の展開を知っている前提の発言を、登場人物にさせない。\n・宿儺は虎杖の体の中にいて、基本的に虎杖が主導権を握っている。宿儺が表に出るのは特別な場合だけ。\n・呪霊との戦闘は危険で、負傷や死もありうる世界として描く。";
+  w.chars=[
+   mkChar("虎杖悠仁",{role:"東京校一年。15歳。宿儺の器",first:"俺",callUser:"名前を呼び捨て、または気さくなあだ名",relation:"同級生。編入を素直に歓迎している",
+     personality:"明るく人懐っこい。裏表がなく、困っている人を放っておけない。死や命については真剣で、祖父の最期の言葉をきっかけに「人を正しい死に導く」ことを自分の指針にしている",
+     speech:"砕けた男子高校生の口調。「〜じゃん」「マジで？」など。年上にも物おじしない",
+     background:"宮城県仙台の高校に通っていた。祖父を亡くした直後、宿儺の指を飲み込んで器になり、死刑を猶予される形で高専に入学した。常人離れした身体能力を持つが、呪術は初心者で術式は持たない。呪力を込めた打撃で戦う",
+     likes:"映画鑑賞、テレビ、料理（得意）",dislikes:"理不尽に人が死ぬこと",other:"この時点で取り込んだ宿儺の指は2本"}),
+   mkChar("伏黒恵",{role:"東京校一年。15歳。二級術師",first:"俺",callUser:"名字を呼び捨て",relation:"同級生。最初は距離を置いて観察している",
+     personality:"冷静で無愛想、口数は少ない。合理的に見えて情に厚く、善人が理不尽に傷つくことを嫌う。「自分は不平等に人を助ける」という考えを持つ",
+     speech:"ぶっきらぼうで淡々とした口調。虎杖や釘崎には呆れ気味にツッコむ",
+     background:"影を媒介に式神を呼び出す「十種影法術」の使い手。玉犬、鵺、大蛇、蝦蟇などを使う。虎杖が指を飲んだ現場に居合わせ、五条に虎杖の助命を頼んだ。五条が後見人のような立場にある",
+     likes:"静かな時間、読書",dislikes:"軽薄な言動、善人が報われないこと"}),
+   mkChar("釘崎野薔薇",{role:"東京校一年。三級術師",first:"私",callUser:"名字を呼び捨て。気に入れば名前で呼ぶ",relation:"同級生。まずは値踏みしている",
+     personality:"勝ち気で口が悪く、思ったことをはっきり言う。おしゃれと都会が好き。自分らしくあることに強いこだわりがあり、芯は面倒見がいい",
+     speech:"歯切れのいい強気な口調。「〜でしょ」「〜じゃないわよ」。怒ると荒くなる",
+     background:"東北の田舎の出身で、都会に出たい一心で上京して高専に入った。金槌と釘、藁人形を使う「芻霊呪法」の使い手。釘を打ち込んで呪力を流し込む戦い方をする",
+     likes:"買い物、流行のもの、東京",dislikes:"田舎扱いされること、なめられること"}),
+   mkChar("五条悟",{role:"東京校一年担任。28歳。特級術師",first:"僕",callUser:"名前を呼び捨て、またはちゃん・くん付け",relation:"担任教師",
+     personality:"軽薄でマイペース、人をからかうのが好き。自他ともに認める最強の術師で、余裕を崩さない。保守的な上層部を嫌い、強く聡い仲間を育てることで呪術界を変えようとしている",
+     speech:"くだけた軽い口調。「〜だよ」「〜でしょ？」。真面目な話のときだけ声が低くなる",
+     background:"御三家・五条家の当主。「無下限呪術」と特別な目「六眼」を持ち、攻撃がほぼ届かない。普段は目隠しをしている。虎杖の死刑に執行猶予を付けさせた張本人",
+     likes:"甘いもの、生徒をからかうこと",dislikes:"上層部、アルコール"}),
+   mkChar("両面宿儺",{role:"呪いの王。千年以上前に恐れられた存在。虎杖の体内にいる",first:"俺",callUser:"小僧、または名前すら呼ばない",relation:"興味はほぼない。気まぐれで目を付けることはある",
+     personality:"傲岸不遜で残忍。自分の快・不快だけが基準で、他人の命に価値を認めない。強者や面白いものにだけ関心を示す",
+     speech:"尊大で古風な物言い。相手を見下し、嘲るように笑う",
+     background:"死後も二十本の指が特級呪物として残り、虎杖がそれを取り込んで器になった。普段は虎杖が体の主導権を握っているが、頬や手に口を出して勝手に話すことがある",
+     other:"力は取り込んだ指の本数に比例する。この時点では2本分"}),
+   mkChar("禪院真希",{role:"東京校二年。四級術師（実力はそれ以上）",first:"私",callUser:"名字か名前を呼び捨て",relation:"先輩",
+     personality:"姉御肌でさばさばしている。口は悪いが後輩の面倒見はいい。家柄や才能で人を測る考え方を嫌う",speech:"男勝りで荒っぽい口調。「〜だろ」「〜しろ」",
+     background:"御三家・禪院家の出身だが、呪力をほとんど持たずに生まれ、家を出た。特別な眼鏡で呪霊を見て、呪具を使った武術で戦う",dislikes:"名字で呼ばれること、禪院家"}),
+   mkChar("狗巻棘",{role:"東京校二年。準一級術師。呪言師",relation:"先輩",
+     personality:"口数は少ないが、仲間思いで優しい。いたずら好きな一面もある",
+     speech:"言葉に呪力が乗ってしまうため、普段はおにぎりの具の名前だけで話す（「しゃけ」は肯定、「おかか」は否定）。口元を襟で隠している",
+     background:"言葉で相手を強制する「呪言」を使う。強い言葉ほど自分の喉に反動が来る"}),
+   mkChar("パンダ",{role:"東京校二年。準二級術師",first:"俺",relation:"先輩",
+     personality:"気のいい兄貴分。ノリが軽く、恋バナなど人の話が好き",speech:"くだけた親しみやすい口調",
+     background:"見た目は本物のパンダだが、夜蛾学長が作った、感情を持つ特別な呪骸。格闘で戦う"}),
+   mkChar("夜蛾正道",{role:"東京校学長。呪骸の使い手。強面で厳格だが生徒思い"}),
+   mkChar("伊地知潔高",{role:"補助監督。任務の送迎や「帳」を下ろす役目を担う。気弱な苦労人で、五条に振り回されている"}),
+   mkChar("家入硝子",{role:"高専の医師。反転術式で他人を治療できる数少ない術師。気だるげで淡々としている"})];
+  w.present=[w.chars[0].id,w.chars[1].id,w.chars[2].id];
+  w.params=[{id:uid(),name:"呪力残量",min:0,max:100,val:100,desc:"主人公の呪力の残り。術式を使うと減り、休むと回復する"}];
+  w.book=[
+   {id:uid(),keys:"呪力,呪霊,呪い",text:"呪力は人の負の感情から生まれるエネルギー。呪霊は呪力でしか祓えない。呪霊は見えない人には見えないが、命の危機に瀕した人には見えることがある。"},
+   {id:uid(),keys:"術式,生得術式",text:"術式は生まれつき体に刻まれた固有の能力で、呪力を流して発動する。持たない術師もいる。術式の内容を相手に明かすと効果が上がる「術式の開示」という縛りがある。"},
+   {id:uid(),keys:"等級,特級,一級,二級,三級,四級",text:"術師と呪霊は四級から一級、その上の特級に分けられる。術師は自分と同じ等級の呪霊に勝てるのが目安。特級は別格で、術師ではごく数人しかいない。"},
+   {id:uid(),keys:"領域展開,領域",text:"領域展開は呪術の極致。呪力で作った空間に相手を閉じ込め、術式を必ず当てる。使える術師はごくわずかで、呪力の消耗も激しい。"},
+   {id:uid(),keys:"帳",text:"帳は、任務の現場を外から見えなくし、呪霊をあぶり出すための結界。補助監督や術師が任務の前に下ろす。"},
+   {id:uid(),keys:"指,宿儺の指,呪物",text:"宿儺の指は全部で二十本。特級呪物で壊すことができず、封印も弱まって各地で呪霊を引き寄せている。虎杖が取り込むたびに宿儺の力が戻る。"},
+   {id:uid(),keys:"反転術式",text:"反転術式は、負の力である呪力を掛け合わせて正の力に変え、傷を治す高度な技術。使える術師は少なく、他人まで治せるのはさらに少ない。"},
+   {id:uid(),keys:"御三家,禪院,加茂,五条家",text:"御三家は呪術界の名門である五条家・禪院家・加茂家。相伝の術式を重んじ、血筋や才能による序列意識が強い。"},
+   {id:uid(),keys:"呪具",text:"呪具は呪力を帯びた武器。呪力の少ない者でも呪霊に傷を与えられる。等級があり、強力なものは非常に高価。"}];
+  return w}}
+];
+function addPreset(p){if(busy)return;var w=p.build(),l=freshLog(w);
+  index.worlds.push({id:w.id,name:w.name,sample:false});saveIndex();
+  w.updatedAt=Date.now();lsSet(K.w(w.id),w);dbPut("w_"+w.id,w);l.updatedAt=Date.now();lsSet(K.l(w.id),l);dbPut("l_"+w.id,l);
+  setIo("「"+w.name+"」を世界リストに追加しました。");renderLobby()}
+
+/* ================= world room ================= */
+function imageList(box,owner,isChar,redraw){box.textContent="";
+  owner.images.forEach(function(rec){var th=h("img",{class:"thumb",alt:rec.label||"画像"}),src=srcOf(rec);if(src)th.src=src;var isMain=owner.main===rec.id||(!chImg(owner,owner.main)&&owner.images[0]===rec);
+    box.appendChild(h("div",{class:"card"},h("div",{class:"imgrow"},[th,h("div",{class:"grow"},[
+      bind(rec,"label",{ph:"表情ラベル（例: 笑顔）",label:"表情ラベル"}),
+      h("div",{class:"row"},[
+        isMain?h("span",{class:"hint",text:"基本の画像"}):h("button",{class:"mini",type:"button",text:"基本にする",onclick:function(){owner.main=rec.id;owner.cur=null;saveWorld();redraw()}}),
+        armed("削除",function(){dropImage(rec);owner.images=owner.images.filter(function(x){return x!==rec});if(owner.main===rec.id)owner.main=owner.images[0]?owner.images[0].id:null;if(owner.cur===rec.id)owner.cur=null;saveWorld();redraw()},"mini")])])])))});
+  if(!owner.images.length)box.appendChild(h("p",{class:"hint",text:"まだ画像がありません。"}))}
+function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
+  v.appendChild(h("h2",{class:"sec",text:"世界観"}));
+  v.appendChild(h("p",{class:"note",text:"まずここを書きます。世界観さえあれば会話を始められます。既存の作品世界を書けば、その世界の人物は登録しなくても登場します。"}));
+  v.appendChild(field("世界の名前",bind(W,"name",{after:function(){touched();$("barTitle").textContent=wname()}})));
+  v.appendChild(field("世界観",bind(W,"lore",{area:1,cls:"tall",after:touched,ph:"時代、場所、文化、勢力、ルール、雰囲気など。箇条書きでも文章でも構いません"}),"詳しいほど再現度が上がります"));
+  v.appendChild(h("div",{class:"row"},[h("a",{class:"btn",href:"#chat",text:"この世界で会話する"})]));
+
+  v.appendChild(h("h2",{class:"sec",text:"キャラクターリスト"}));
+  v.appendChild(h("p",{class:"note",text:"登録は任意です。登録した人物は、その設定が優先されるので再現度が上がります。会話に登場した人物は「自動登録」として追加され、あとから詳しく書き足せます。"}));
+  var cbox=h("div");v.appendChild(cbox);
+  function drawCast(){cbox.textContent="";
+    if(!W.chars.length)cbox.appendChild(h("p",{class:"hint",text:"まだ登録されたキャラクターはいません。"}));
+    W.chars.forEach(function(c){var src=srcOf(chMain(c)),th=src?h("img",{class:"thumb sm",alt:"",src:src}):null;
+      cbox.appendChild(h("div",{class:"listrow"},[
+        h("span",{class:"who"},[th,h("strong",{text:c.name||"名前未設定"}),c.auto?h("span",{class:"badge",text:"自動登録"}):null,h("span",{class:"hint",text:"好感度 "+signed(c.affinity)})]),
+        h("span",{class:"row",style:"margin:0"},[
+          h("button",{class:"mini strong",type:"button",text:"編集",onclick:function(){editId=c.id;location.hash="#cast";route()}}),
+          armed("削除",function(){c.images.forEach(dropImage);W.chars=W.chars.filter(function(x){return x!==c});if(W.focus===c.id)W.focus=null;saveWorld();drawCast()},"mini")])]))})}
+  drawCast();
+  v.appendChild(h("div",{class:"row",style:"margin-top:10px"},[
+    h("button",{class:"btn ghost",type:"button",text:"キャラを追加",onclick:function(){var c=blankCharRec();c.name="";W.chars.push(c);touched();saveWorld();editId=c.id;location.hash="#cast";route()}})]));
+  v.appendChild(h("div",{class:"row"},check(W.style,"autoCast","会話に登場した人物を自動でリストに追加する")));
+
+  v.appendChild(h("h2",{class:"sec",text:"あなた（主人公）"}));
+  v.appendChild(field("名前",bind(W.user,"name",{after:touched}),"空欄なら「あなた」として扱われます"));
+  v.appendChild(field("あなたの設定",bind(W.user,"profile",{area:1,after:touched}),"この世界での立場、外見、能力など。この世界だけの設定です"));
+
+  v.appendChild(h("h2",{class:"sec",text:"物語の始まり"}));
+  v.appendChild(field("冒頭の場所・状況",bind(W,"opening",{after:touched,ph:"例: 港の酒場、出航の前夜"}),"「物語を始める」を押したときの舞台になります"));
+  v.appendChild(field("冒頭の文章（任意）",bind(W,"greeting",{area:1,after:touched}),"書いておくと、最初からやり直したときにこの文章から始まります。空欄なら毎回新しく書かれます"));
+
+  v.appendChild(h("h2",{class:"sec",text:"世界の画像"}));
+  v.appendChild(h("p",{class:"note",text:"話している相手に画像がないときに、会話画面に表示されます。"}));
+  var wimg=h("div",{class:"row"});v.appendChild(wimg);
+  function drawWImg(){wimg.textContent="";var src=srcOf(W.image);if(src)wimg.appendChild(h("img",{class:"thumb",alt:"世界の画像",src:src}));
+    var fin=h("input",{type:"file",accept:"image/*",class:"sr-only",id:"wImg"});
+    fin.addEventListener("change",function(){var f=fin.files&&fin.files[0];fin.value="";if(!f)return;var w=W;
+      shrink(f).then(function(r){dropImage(w.image);w.image={id:uid(),label:"",assetId:null};storeImage(w.image,r,w);touched();saveWorld();drawWImg()}).catch(function(){setBanner("この画像は読み込めませんでした。",true)})});
+    wimg.appendChild(fin);wimg.appendChild(h("label",{class:"btn ghost",htmlFor:"wImg",text:src?"画像を変更":"画像を追加"}));
+    if(src)wimg.appendChild(armed("削除",function(){dropImage(W.image);W.image=null;saveWorld();drawWImg()},"mini"))}
+  drawWImg();
+
+  v.appendChild(h("h2",{class:"sec",text:"返答スタイル"}));
+  v.appendChild(h("div",{class:"pair"},[
+    field("文体",sel(W.style,"narr",[["novel","小説風（地の文あり）"],["serif","会話中心"]])),
+    field("返答の長さ",sel(W.style,"len",[["1","1：平均300字"],["2","2：平均600字"],["3","3：平均1000字"],["4","4：平均1500字"],["5","5：2000字以上"]]),"長いほど利用量が増え、返答に時間がかかります")]));
+  v.appendChild(h("div",{class:"row"},check(W.style,"choices","次の行動の候補を3つ表示する",function(){choices=[]})));
+
+  v.appendChild(h("h2",{class:"sec",text:"パラメータ"}));
+  v.appendChild(h("p",{class:"note",text:"人物ごとの好感度とは別に、所持金・体力・名声など、この世界で追いたい数値を足せます。返答のたびに変化します。"}));
+  v.appendChild(h("div",{class:"pair"},[field("今の場所・状況",bind(W,"scene")),field("今の時間",bind(W,"time"))]));
+  var pbox=h("div");v.appendChild(pbox);
+  function drawParams(){pbox.textContent="";
+    W.params.forEach(function(p){pbox.appendChild(h("div",{class:"card"},[
+      h("div",{class:"card-grid"},[bind(p,"name",{ph:"名前",label:"パラメータ名"}),bind(p,"min",{num:1,label:"最小",ph:"最小"}),bind(p,"max",{num:1,label:"最大",ph:"最大"}),bind(p,"val",{num:1,label:"現在値",ph:"現在"})]),
+      bind(p,"desc",{ph:"何を表すか",label:"説明"}),
+      h("div",{class:"row"},armed("削除",function(){W.params=W.params.filter(function(x){return x!==p});saveWorld();drawParams()},"mini"))]))})}
+  drawParams();
+  v.appendChild(h("div",{class:"row"},h("button",{class:"btn ghost",type:"button",text:"パラメータを追加",onclick:function(){W.params.push({id:uid(),name:"",min:0,max:100,val:50,desc:""});saveWorld();drawParams()}})));
+
+  v.appendChild(h("h2",{class:"sec",text:"ショートカット"}));
+  v.appendChild(h("p",{class:"note",text:"入力欄の上に並ぶボタンです。押すと（）付きの指示として入力欄に入ります。"}));
+  var sbox=h("div");v.appendChild(sbox);
+  function drawShort(){sbox.textContent="";
+    W.shortcuts.forEach(function(sc){sbox.appendChild(h("div",{class:"card"},[bind(sc,"label",{ph:"ボタンの名前",label:"ボタンの名前"}),bind(sc,"text",{ph:"指示の内容",label:"指示の内容"}),
+      h("div",{class:"row"},armed("削除",function(){W.shortcuts=W.shortcuts.filter(function(x){return x!==sc});saveWorld();drawShort()},"mini"))]))})}
+  drawShort();
+  v.appendChild(h("div",{class:"row"},h("button",{class:"btn ghost",type:"button",text:"ショートカットを追加",onclick:function(){W.shortcuts.push({id:uid(),label:"",text:""});saveWorld();drawShort()}})));
+
+  v.appendChild(h("h2",{class:"sec",text:"やり直しと書き出し"}));
+  v.appendChild(h("div",{class:"row"},[
+    armed("会話ログだけ消去",function(){L.msgs=[];choices=[];saveLog();setRoomNote("会話ログを消去しました。")}),
+    armed("最初からやり直す",function(){L=freshLog(W);W.chars.forEach(function(c){c.affinity=0;c.mood="";c.cur=null});W.scene=W.opening||"";W.time="";W.turns=0;W.lt="";W.mem=[];W.present=[];W.focus=null;choices=[];sysNote="";saveWorld();saveLog();drawCast();setRoomNote("最初の状態に戻しました。")}),
+    h("button",{class:"btn ghost",type:"button",text:"この世界を書き出す",onclick:exportWorld})]));
+  v.appendChild(h("p",{class:"hint",id:"roomNote",text:""}));
+  v.appendChild(h("p",{class:"hint",text:"「最初からやり直す」は、ログ・記憶・好感度を初期化します。世界観・キャラクター・画像は残ります。"}));
+  v.appendChild(h("div",{id:"ioBox"}))}
+function setRoomNote(t){var e=$("roomNote");if(e)e.textContent=t}
+
+/* ================= character editor ================= */
+function renderCast(){var v=$("view-cast");v.textContent="";if(!W)return;var c=findChar(editId);
+  if(!c){v.appendChild(h("p",{class:"note",text:"編集するキャラクターが選ばれていません。"}));v.appendChild(h("a",{class:"btn ghost",href:"#room",text:"世界のページへ戻る"}));return}
+  function edited(){if(c.auto){c.auto=false}touched()}
+  v.appendChild(h("h2",{class:"sec",text:"キャラクター設定"}));
+  v.appendChild(h("p",{class:"note",text:"空欄の項目は世界観から補われます。書いた項目は世界観より優先されます。"}));
+  v.appendChild(field("名前",bind(c,"name",{after:edited}),"会話に出てくる呼び名と合わせてください"));
+  var pairBox=null;
+  CH_FIELDS.forEach(function(f){var el=bind(c.s,f.k,{area:f.area,after:edited}),d=field(f.label,el,f.hint);
+    if(f.pair){if(!pairBox||pairBox.childNodes.length>=2){pairBox=h("div",{class:"pair"});v.appendChild(pairBox)}pairBox.appendChild(d)}else{pairBox=null;v.appendChild(d)}});
+  v.appendChild(field("セリフの例",bind(c.s,"examples",{area:1,after:edited}),"口調の見本になるセリフ。2〜3個あると安定します"));
+
+  v.appendChild(h("h2",{class:"sec",text:"画像と表情"}));
+  v.appendChild(h("p",{class:"note",text:"ラベルを「通常」「笑顔」「怒り」などにして複数枚入れると、返答の内容に合う画像へ自動で切り替わります。"}));
+  var ibox=h("div");v.appendChild(ibox);function drawImages(){imageList(ibox,c,true,drawImages)}drawImages();
+  var fin=h("input",{type:"file",accept:"image/*",multiple:true,class:"sr-only",id:"imgAdd"});
+  fin.addEventListener("change",function(){var files=Array.prototype.slice.call(fin.files||[]);fin.value="";var first=!c.images.length,w=W,chain=Promise.resolve();
+    files.forEach(function(f){chain=chain.then(function(){return shrink(f)}).then(function(r){var rec={id:uid(),label:c.images.length?"表情"+(c.images.length+1):"通常",assetId:null};c.images.push(rec);if(!chImg(c,c.main))c.main=rec.id;storeImage(rec,r,w);edited();persistWorld(w)})
+      .catch(function(){setApNote("読み込めない画像がありました。JPEGかPNGを選んでください。")})});
+    chain.then(function(){drawImages();if(first&&c.images.length&&!c.s.appearance.trim())readAppearance(c)})});
+  v.appendChild(h("div",{class:"row"},[fin,h("label",{class:"btn ghost",htmlFor:"imgAdd",text:"画像を追加"})]));
+  v.appendChild(field("外見メモ",bind(c.s,"appearance",{area:1,id:"f_appearance",after:edited}),"基本の画像から自動で書き込まれます。手で直しても構いません"));
+  v.appendChild(h("div",{class:"row"},[h("button",{class:"btn ghost",type:"button",text:"基本の画像から外見を読み取り直す",onclick:function(){readAppearance(c)}}),h("span",{class:"hint",id:"apNote",text:apNote})]));
+
+  v.appendChild(h("h2",{class:"sec",text:"今の状態"}));
+  var aff=h("input",{type:"number",id:"affInput",min:"-100",max:"100",step:"1"});aff.value=c.affinity;
+  aff.addEventListener("change",function(){var n=clamp(Math.round(+aff.value||0),-100,100);aff.value=n;c.affinity=n;saveWorld()});
+  v.appendChild(h("div",{class:"pair"},[field("主人公への好感度（-100〜100）",aff),field("気分",bind(c,"mood"))]));
+  v.appendChild(h("div",{class:"row"},[h("a",{class:"btn",href:"#room",text:"キャラクターリストへ戻る"}),
+    armed("このキャラを削除",function(){c.images.forEach(dropImage);W.chars=W.chars.filter(function(x){return x!==c});if(W.focus===c.id)W.focus=null;editId=null;saveWorld();location.hash="#room";route()})]))}
+
+/* ================= memory view ================= */
+function renderMemory(){var v=$("view-memory");v.textContent="";if(!W)return;
+  v.appendChild(h("h2",{class:"sec",text:"常に守るメモ"}));
+  v.appendChild(field("メモ",bind(W,"note",{area:1}),"毎回かならず送られます。忘れてほしくない事実や、守ってほしい決まりを書きます"));
+  v.appendChild(h("h2",{class:"sec",text:"長期記憶"}));
+  v.appendChild(field("これまでの要点",bind(W,"lt",{area:1}),"会話を要約するたびに自動で書き換わります。手で直しても構いません。毎回送られます"));
+  v.appendChild(h("h2",{class:"sec",text:"出来事の記憶"}));
+  v.appendChild(h("p",{class:"note",text:"会話が溜まると、古い部分が出来事ごとに要約されてここに並びます。返答のたびに、今の場面に合うものが最大3つ選ばれて送られます。「固定」にしたものは毎回送られます。"}));
+  v.appendChild(h("div",{class:"pair"},[
+    field("選び方",sel(W.style,"pick",[["ai","AIが場面に合うものを選ぶ"],["kw","キーワードの一致で選ぶ（追加の問い合わせなし）"]])),
+    field("要約する間隔（メッセージ数）",bind(W.style,"chunk",{num:1,after:function(){W.style.chunk=clamp(int(W.style.chunk)||10,4,30)}}),"4〜30")]));
+  v.appendChild(field("そのまま送る直近の履歴（メッセージ数）",bind(W.style,"hist",{num:1,after:function(){W.style.hist=clamp(int(W.style.hist)||12,2,40)}}),"2〜40。多いほど文脈は正確になり、利用量は増えます"));
+  var pending=L.msgs.filter(function(m){return !m.s}).length;
+  v.appendChild(h("div",{class:"row"},[h("button",{class:"btn ghost",type:"button",text:"今すぐ要約する",onclick:function(){maybeSummarize(true)}}),
+    h("span",{class:"hint",text:"未要約: "+pending+"件"}),h("span",{class:"hint",id:"memNote",text:memNote})]));
+  var mbox=h("div");v.appendChild(mbox);
+  function drawMem(){mbox.textContent="";
+    if(!W.mem.length)mbox.appendChild(h("p",{class:"hint",text:"まだ記憶はありません。"}));
+    W.mem.slice().reverse().forEach(function(m){var tags={v:(m.tags||[]).join("、")};
+      var tagEl=bind(tags,"v",{ph:"キーワード（、で区切る）",label:"キーワード",save:function(){m.tags=tags.v.split(/[,、]+/).map(function(x){return x.trim()}).filter(Boolean);saveWorld()}});
+      mbox.appendChild(h("div",{class:"card"},[bind(m,"title",{ph:"見出し",label:"見出し"}),bind(m,"sum",{area:1,ph:"要約",label:"要約"}),tagEl,
+        h("div",{class:"row"},[check(m,"pin","固定（毎回送る）"),armed("削除",function(){W.mem=W.mem.filter(function(x){return x!==m});saveWorld();drawMem()},"mini")])]))})}
+  drawMem();
+  v.appendChild(h("div",{class:"row"},h("button",{class:"btn ghost",type:"button",text:"記憶を手で追加",onclick:function(){W.mem.push({id:uid(),title:"",sum:"",tags:[],pin:false,ts:Date.now()});saveWorld();drawMem()}})));
+  v.appendChild(h("h2",{class:"sec",text:"キーワードブック"}));
+  v.appendChild(h("p",{class:"note",text:"キーワードが会話に出たときだけ送られる設定資料です。場所・組織・用語・小道具などの細かい設定に向いています。"}));
+  var lbox=h("div");v.appendChild(lbox);
+  function drawBook(){lbox.textContent="";
+    W.book.forEach(function(l){lbox.appendChild(h("div",{class:"card"},[bind(l,"keys",{ph:"キーワード（、で区切る）",label:"キーワード"}),bind(l,"text",{area:1,ph:"このキーワードが出たときに参照する内容",label:"内容"}),
+      h("div",{class:"row"},armed("削除",function(){W.book=W.book.filter(function(x){return x!==l});saveWorld();drawBook()},"mini"))]))})}
+  drawBook();
+  v.appendChild(h("div",{class:"row"},h("button",{class:"btn ghost",type:"button",text:"項目を追加",onclick:function(){W.book.push({id:uid(),keys:"",text:""});saveWorld();drawBook()}})))}
+
+/* ================= export / import ================= */
+function allImages(w){var a=[];if(w.image)a.push(w.image);w.chars.forEach(function(c){c.images.forEach(function(r){a.push(r)})});return a}
+function exportWorld(){if(!W)return;setRoomNote("書き出しを準備しています…");var w=clone(W),l=clone(L),imgs={};
+  Promise.all(allImages(W).map(function(rec){return blobOf(rec).then(function(b){return b?blobToDataUrl(b):null}).then(function(u){if(u)imgs[rec.id]=u})}))
+  .then(function(){var data=JSON.stringify({format:"simulation-world",v:3,exportedAt:new Date().toISOString(),world:w,log:l,images:imgs});
+    var fname=(w.name.trim()||"world").replace(/[\\\/:*?"<>|\s]+/g,"_").slice(0,40)+".json";
+    try{var bl=new Blob([data],{type:"application/json"}),u=URL.createObjectURL(bl),a=document.createElement("a");a.href=u;a.download=fname;document.body.appendChild(a);a.click();
+      setTimeout(function(){URL.revokeObjectURL(u);a.remove()},5000);setRoomNote("書き出しました。iPhoneでは「ファイル」アプリの「ダウンロード」に保存されます。");return}catch(err){}
+    setRoomNote("ファイルに保存できなかったので、下に内容を表示しました（画像は含みません）。");showExportText(w,l)})
+  .catch(function(){setRoomNote("書き出しに失敗しました。")})}
+function showExportText(w,l){var box=$("ioBox");if(!box)return;box.textContent="";
+  var ta=h("textarea",{id:"expText","aria-label":"書き出した内容",style:"width:100%;min-height:140px"});ta.value=JSON.stringify({format:"simulation-world",v:3,world:w,log:l,images:{}});
+  box.appendChild(ta);box.appendChild(h("div",{class:"row",style:"margin-top:6px"},h("button",{class:"btn ghost",type:"button",text:"内容をコピー",onclick:function(){
+    try{navigator.clipboard.writeText(ta.value).then(function(){setRoomNote("コピーしました。")}).catch(function(){ta.select();setRoomNote("自動でコピーできませんでした。選択した状態にしたので、手動でコピーしてください。")})}catch(e){ta.select()}}})))}
+function importFile(file){if(busy)return;setIo("読み込んでいます…");
+  var fr=new FileReader();fr.onerror=function(){setIo("ファイルを読めませんでした。")};
+  fr.onload=function(){var j;try{j=JSON.parse(String(fr.result))}catch(e){j=null}
+    if(!j||j.format!=="simulation-world"||!j.world){setIo("このファイルは読み込めません。この画面で書き出した世界のファイルを選んでください。");return}
+    var w=normWorld(j.world);w.id=uid();w.sample=false;var imgs=j.images||{},jobs=[];
+    function remap(rec){if(!rec)return null;var n={id:uid(),label:rec.label||"",assetId:null},src=imgs[rec.id];
+      if(src)jobs.push(function(){return dataUrlToBlob(src).then(function(b){storeImage(n,{blob:b,dataUrl:src},w)}).catch(function(){})});return {old:rec.id,rec:n}}
+    var wi=remap(w.image);w.image=wi?wi.rec:null;
+    w.chars.forEach(function(c){var map={};c.images=c.images.map(function(r){var x=remap(r);map[x.old]=x.rec.id;return x.rec});c.main=map[c.main]||(c.images[0]?c.images[0].id:null);c.cur=null});
+    var l=normLog(j.log,w.id);l.id=w.id;
+    index.worlds.push({id:w.id,name:w.name.trim()||"名前のない世界",sample:false});saveIndex();
+    w.updatedAt=Date.now();lsSet(K.w(w.id),w);dbPut("w_"+w.id,w);l.updatedAt=Date.now();lsSet(K.l(w.id),l);dbPut("l_"+w.id,l);
+    var chain=Promise.resolve();jobs.forEach(function(job){chain=chain.then(job)});
+    chain.then(function(){setIo("「"+(w.name||"名前のない世界")+"」を読み込みました。");renderLobby()})};
+  fr.readAsText(file)}
+
+/* ================= shell ================= */
+var VIEWS=["welcome","api","lobby","room","cast","memory","chat"],IN_WORLD={room:1,cast:1,memory:1,chat:1};
+function currentView(){var v=(location.hash||"#welcome").slice(1);return VIEWS.indexOf(v)<0?"welcome":v}
+function navLink(label,href,cur){var a=h("a",{href:href,text:label});if(cur)a.setAttribute("aria-current","page");return a}
+function route(){var v=currentView();
+  if(IN_WORLD[v]&&(!W||!entry(W.id))){W=null;L=null;v="lobby";if(location.hash!=="#lobby")location.hash="#lobby"}
+  VIEWS.forEach(function(n){$("view-"+n).hidden=n!==v});
+  var bar=$("bar"),nav=$("nav");bar.hidden=v==="welcome";nav.textContent="";
+  if(IN_WORLD[v]){$("barTitle").textContent=wname();
+    nav.appendChild(navLink("会話","#chat",v==="chat"));nav.appendChild(navLink("世界","#room",v==="room"||v==="cast"));nav.appendChild(navLink("記憶","#memory",v==="memory"));nav.appendChild(navLink("退室","#lobby",false))}
+  else{$("barTitle").textContent=v==="api"?"API設定":"SimulationWORLD";
+    if(v==="lobby"){nav.appendChild(navLink("API設定","#api",false));nav.appendChild(navLink("入口へ","#welcome",false))}
+    if(v==="api"){nav.appendChild(navLink("ロビーへ","#lobby",false));nav.appendChild(navLink("入口へ","#welcome",false))}}
+  document.title=IN_WORLD[v]?wname()+" - SimulationWORLD":"SimulationWORLD";
+  if(v==="welcome")$("keyState").textContent=model.ready()?"APIキー: 設定済み（"+mainModel()+"）":"APIキーがまだ入力されていません。先に「API設定」でキーを入力してください。";
+  if(v==="chat"){renderStatus();renderLog();setSys(sysNote)}
+  else if(v==="room")renderRoom();else if(v==="cast")renderCast();else if(v==="memory")renderMemory();
+  else if(v==="lobby")renderLobby();else if(v==="api")renderApi();
+  if(v!=="chat"&&v!=="welcome")$("view-"+v).scrollTop=0}
+function autosize(){var t=$("input");t.style.height="44px";t.style.height=Math.min(120,Math.max(44,t.scrollHeight+2))+"px"}
+
+bootLocal();route();
+window.addEventListener("hashchange",route);
+$("composer").addEventListener("submit",function(e){e.preventDefault();send()});
+$("input").addEventListener("input",autosize);
+$("input").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&!busy&&window.matchMedia("(pointer:fine)").matches){e.preventDefault();send()}});
+initCaps();
+})();
+</script>
+</body>
+</html>
