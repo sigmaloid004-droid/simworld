@@ -85,6 +85,9 @@ button,input,textarea,select{font:inherit;color:inherit}
 .pbar-track{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:2px;overflow:hidden}
 .pbar-fill{height:100%;background:var(--ink);transition:width .4s}
 .present{display:flex;flex-direction:column;gap:5px}
+.prow-wrap{display:flex;gap:4px;align-items:center}
+.prow-wrap .prow{flex:1;min-width:0}
+#callSel{flex:1;min-width:0;font-size:12px;padding:2px 4px;border:1px solid var(--line);border-radius:3px;background:var(--bg)}
 .prow{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:3px;padding:2px 4px;cursor:pointer}
 .prow[aria-pressed="true"]{border-color:var(--ink)}
 .prow-top{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:700}
@@ -490,10 +493,15 @@ function renderStatus(){if(!W)return;
   var list=$("presentList"),pcs=presentChars();list.textContent="";
   if(!pcs.length)list.appendChild(h("span",{class:"hint",text:"まだ誰も登場していません"}));
   pcs.forEach(function(c){var a=c.affinity,fill=h("i",{class:a>=0?"pos":"neg",style:"left:"+(a>=0?50:50+a/2)+"%;width:"+Math.abs(a)/2+"%"});
-    list.appendChild(h("button",{class:"prow",type:"button","aria-pressed":c.id===W.focus?"true":"false","aria-label":c.name+"の画像を表示",
+    list.appendChild(h("div",{class:"prow-wrap"},[h("button",{class:"prow",type:"button","aria-pressed":c.id===W.focus?"true":"false","aria-label":c.name+"の画像を表示",
       onclick:function(){W.focus=W.focus===c.id?null:c.id;saveWorld();renderStatus()}},[
       h("span",{class:"prow-top"},[h("span",null,[c.name,c.mood?h("span",{class:"prow-sub",text:"　"+c.mood}):null]),h("span",{class:a>0?"pos":a<0?"neg":"",text:signed(a)})]),
-      h("span",{class:"pm"},[fill,h("b")])]))});
+      h("span",{class:"pm"},[fill,h("b")])]),
+      h("button",{class:"mini",type:"button",text:"退場","aria-label":c.name+"をこの場から外す",onclick:function(){W.present=(W.present||[]).filter(function(x){return x!==c.id});if(W.focus===c.id)W.focus=null;saveWorld();renderStatus()}})]))});
+  var abs=W.chars.filter(function(c){return c.name.trim()&&(W.present||[]).indexOf(c.id)<0});
+  if(abs.length){var se=h("select",{id:"callSel","aria-label":"この場に呼ぶ人物"});var o0=h("option",{text:"人物を選ぶ"});o0.value="";se.appendChild(o0);
+    abs.forEach(function(c){var o=h("option",{text:c.name});o.value=c.id;se.appendChild(o)});
+    list.appendChild(h("div",{class:"row",style:"margin:4px 0 0"},[se,h("button",{class:"mini",type:"button",text:"この場に呼ぶ",onclick:function(){if(!se.value)return;if(!W.present)W.present=[];W.present.push(se.value);saveWorld();renderStatus()}})]))}
   $("stScene").textContent=W.scene||"—";$("stTime").textContent=W.time||"—";
   $("stageSum").textContent=[W.scene||"場所未設定",W.time,pcs.length?pcs.map(function(c){return c.name}).join("・"):"人物なし"].filter(Boolean).join(" ／ ");
   var box=$("customParams");box.textContent="";
@@ -557,6 +565,9 @@ function pickMemories(ctx,signal){
     (str(r.text).match(/\d+/g)||[]).forEach(function(n){var i=parseInt(n,10)-1;if(rest[i]&&!seen[i]&&out.length<3){seen[i]=1;out.push(rest[i])}});
     return pinned.concat(out)})
   .catch(function(e){if(e&&e.code==="cancelled")throw e;return pinned.concat(pickByKeyword(rest,ctx))})}
+function nameKeys(nm){nm=str(nm).trim();var ks=[nm];nm.split(/[\s・＝=　]+/).forEach(function(p){if(p.length>=2&&p!==nm)ks.push(p)});
+  if(ks.length===1&&nm.length>=3&&/^[\u4e00-\u9fff]+$/.test(nm)){ks.push(nm.slice(0,2));ks.push(nm.slice(2))}return ks.filter(function(k){return k.length>=2})}
+function mentioned(c,text){return nameKeys(c.name).some(function(k){return text.indexOf(k)>=0})}
 function matchBook(ctx){return W.book.filter(function(l){return str(l.text).trim()&&str(l.keys).split(/[,、\s]+/).some(function(k){return k.length>=1&&ctx.indexOf(k)>=0})}).slice(0,6)}
 
 /* ================= prompt ================= */
@@ -571,14 +582,15 @@ function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||
   A.push("","# 世界観",W.lore.trim()||"（未設定。主人公の発言から自然な舞台を補ってください）");
   A.push("","# 主人公（ユーザー）","- 名前: "+un);if(W.user.profile.trim())A.push("- 設定: "+W.user.profile.trim());
   var named=W.chars.filter(function(c){return c.name.trim()});
-  var pres=W.present||[];
-  var detailed=named.filter(function(c){return hasDetail(c)&&(pres.indexOf(c.id)>=0||ctx.indexOf(c.name.trim())>=0)}).slice(0,6);
-  if(detailed.length<3)named.forEach(function(c){if(detailed.length<3&&hasDetail(c)&&detailed.indexOf(c)<0)detailed.push(c)});
-  var others=named.filter(function(c){return detailed.indexOf(c)<0}).slice(0,30);
-  if(detailed.length){A.push("","# 登録キャラクター（登場させるときは、この設定を世界観の一般知識より優先する）");detailed.forEach(function(c){A.push(charBlock(c))})}
-  if(others.length){A.push("","# そのほかの既知の人物");others.forEach(function(c){A.push("- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":"")+" 好感度"+c.affinity)})}
+  var pres=W.present||[],prev=histEnd>0&&L.msgs[histEnd-1]?L.msgs[histEnd-1].t:"",near=(latest||"")+"\n"+prev;
+  var onstage=named.filter(function(c){return pres.indexOf(c.id)>=0});
+  var called=latest?named.filter(function(c){return pres.indexOf(c.id)<0&&mentioned(c,latest)}).slice(0,3):[];
+  var send=onstage.concat(called).slice(0,8),detailed=send.filter(hasDetail),light=send.filter(function(c){return !hasDetail(c)});
+  if(onstage.length)A.push("","# 今この場にいる人物: "+onstage.map(function(c){return c.name}).join("、"));
+  if(detailed.length){A.push("","# 登録キャラクターの設定（この場にいる人物と、今回の入力で名前が出た人物。世界観の一般知識より優先する）");detailed.forEach(function(c){A.push(charBlock(c))})}
+  if(light.length){A.push("","# そのほかの関係人物");light.forEach(function(c){A.push("- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":"")+" 好感度"+c.affinity)})}
   if(W.note.trim())A.push("","# 常に守るメモ",W.note.trim());
-  var book=matchBook(ctx);if(book.length){A.push("","# 関連する設定資料");book.forEach(function(l){A.push("- "+l.text.trim())})}
+  var book=matchBook(near);if(book.length){A.push("","# 関連する設定資料");book.forEach(function(l){A.push("- "+l.text.trim())})}
   if(W.lt.trim())A.push("","# 長期記憶（これまでの要点）",W.lt.trim());
   if(picked.length){A.push("","# 今の場面に関係する過去の出来事");picked.forEach(function(m){A.push("- 【"+m.title+"】"+m.sum)})}
   A.push("","# 現在の状態");if(W.scene)A.push("- 場所・状況: "+W.scene);if(W.time)A.push("- 時間: "+W.time);
