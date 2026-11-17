@@ -121,6 +121,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .msg.user{align-self:flex-end;align-items:flex-end}
 .msg.user .body{background:var(--ink);color:var(--bg)}
 .msg .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.usage{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;flex-basis:100%}
 .chip{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
 .mini{background:none;border:1px solid var(--line);border-radius:3px;font-size:12px;padding:1px 8px;cursor:pointer;color:var(--muted)}
 .mini:hover{color:var(--ink);border-color:var(--ink)}
@@ -345,7 +346,7 @@ function trimLog(){while(L.msgs.length>300)L.msgs.shift();
 function saveLog(){if(!W)return;if(!index.updatedAt)saveIndex();trimLog();L.updatedAt=Date.now();lsSet(K.l(W.id),L);dbPut("l_"+W.id,L)}
 function entry(id){return index.worlds.filter(function(x){return x.id===id})[0]||null}
 function normIndex(i){if(!i||!Array.isArray(i.worlds))return null;if(!i.settings)i.settings={};
-  if(!i.settings.tier)i.settings.tier="default";if(!i.settings.mainModel)i.settings.mainModel="claude-opus-4-6";if(!i.settings.helperModel)i.settings.helperModel="claude-haiku-5-5";i.settings.mainCustom=str(i.settings.mainCustom);i.settings.helperCustom=str(i.settings.helperCustom);i.settings.model=str(i.settings.model);i.settings.system=str(i.settings.system);if(!i.settings.system.trim())i.settings.system=DEFAULT_SYS;return i}
+  if(!i.settings.tier)i.settings.tier="default";if(!i.settings.cacheTtl)i.settings.cacheTtl="5m";if(i.settings.cacheOn==null)i.settings.cacheOn=true;if(i.settings.showUsage==null)i.settings.showUsage=true;if(!i.settings.mainModel)i.settings.mainModel="claude-opus-4-6";if(!i.settings.helperModel)i.settings.helperModel="claude-haiku-5-5";i.settings.mainCustom=str(i.settings.mainCustom);i.settings.helperCustom=str(i.settings.helperCustom);i.settings.model=str(i.settings.model);i.settings.system=str(i.settings.system);if(!i.settings.system.trim())i.settings.system=DEFAULT_SYS;return i}
 function bootLocal(){index=normIndex(lsGet(K.index));
   if(!index){var s=sampleWorld();index={v:3,updatedAt:0,worlds:[{id:s.id,name:s.name,sample:true}],settings:{tier:"default",model:"",system:""}}}}
 function loadLocalWorld(id){var e=entry(id),lw=lsGet(K.w(id));
@@ -370,6 +371,16 @@ function syncFromDb(){
 /* ================= model access (Anthropic API) ================= */
 var API_URL="https://api.anthropic.com/v1/messages";
 var MODEL_OPTS=[["claude-opus-4-6","Claude Opus 4.6"],["claude-opus-5-5","Claude Opus 5.5（最新のOpus）"],["claude-sonnet-5-5","Claude Sonnet 5.5"],["claude-haiku-5-5","Claude Haiku 5.5（速い・安い）"]];
+var YEN=150;
+var PRICES={"claude-opus-4-6":[5,25,6.25,10,0.5],"claude-opus-5-5":[4,20,5,8,0.2],"claude-sonnet-5-5":[2,10,2.5,4,0.1],"claude-haiku-5-5":[0.1,0.5,0.125,0.2,0.01]};
+var turnAcc=null;
+function addUsage(mdl,u){if(!u)return;var pr=PRICES[mdl],g=index.settings,i=+u.input_tokens||0,cw=+u.cache_creation_input_tokens||0,cr=+u.cache_read_input_tokens||0,o=+u.output_tokens||0;
+  var yen=pr?(i*pr[0]+o*pr[1]+cw*(g.cacheTtl==="1h"?pr[3]:pr[2])+cr*pr[4])/1e6*YEN:null;
+  var t=g.usage||(g.usage={in:0,cw:0,cr:0,out:0,yen:0,unknown:0,since:Date.now()});t.in+=i;t.cw+=cw;t.cr+=cr;t.out+=o;if(yen==null)t.unknown++;else t.yen+=yen;saveIndex();
+  if(turnAcc){turnAcc.in+=i;turnAcc.cw+=cw;turnAcc.cr+=cr;turnAcc.out+=o;if(yen==null)turnAcc.unknown=1;else turnAcc.yen+=yen}}
+function fmtN(n){return Math.round(n).toLocaleString("ja-JP")}
+function usageText(u){var s="入力 "+fmtN(u.in);if(u.cr||u.cw)s+="（キャッシュ読込 "+fmtN(u.cr)+"・書込 "+fmtN(u.cw)+"）";s+=" ／ 出力 "+fmtN(u.out);
+  if(!u.unknown)s+=" ／ 約"+(u.yen<10?u.yen.toFixed(1):Math.round(u.yen))+"円";return s}
 var MAX_TOK={1:4000,2:6000,3:8000,4:10000,5:16000};
 var keyStore={apiKey:lsRaw("sw:apikey")||""};
 function saveKey(){lsRawSet("sw:apikey",str(keyStore.apiKey).trim())}
@@ -384,7 +395,8 @@ function apiErr(status,raw){var j=null;try{j=JSON.parse(raw)}catch(e){}var er=(j
 function readStream(res,onText,st){var reader=res.body.getReader(),dec=new TextDecoder(),buf="",stop=null;
   function handle(ev){
     if(ev.type==="content_block_delta"&&ev.delta&&ev.delta.type==="text_delta"){st.text+=ev.delta.text;if(onText){try{onText({text:st.text,delta:ev.delta.text})}catch(e){}}}
-    else if(ev.type==="message_delta"&&ev.delta&&ev.delta.stop_reason)stop=ev.delta.stop_reason;
+    else if(ev.type==="message_start"&&ev.message&&ev.message.usage)st.usage=Object.assign({},ev.message.usage);
+    else if(ev.type==="message_delta"){if(ev.delta&&ev.delta.stop_reason)stop=ev.delta.stop_reason;if(ev.usage)st.usage=Object.assign(st.usage||{},ev.usage)}
     else if(ev.type==="error"){var x=apiErr(0,JSON.stringify(ev));x.text=st.text;throw x}}
   function pump(){return reader.read().then(function(r){if(r.done)return;buf+=dec.decode(r.value,{stream:true});
     var lines=buf.split("\n");buf=lines.pop();
@@ -392,19 +404,21 @@ function readStream(res,onText,st){var reader=res.body.getReader(),dec=new TextD
     return pump()})}
   return pump().then(function(){
     if(!st.text.trim())throw {code:stop==="refusal"?"refused":"empty",message:""};
-    return {text:st.text,truncated:stop==="max_tokens",modelApplied:st.model}})}
+    return {text:st.text,truncated:stop==="max_tokens",modelApplied:st.model,usage:st.usage}})}
 var model={canImg:true,
   ready:function(){return !!str(keyStore.apiKey).trim()},
   ask:function(prompt,o){o=o||{};var mdl=o.modelId||(o.tier==="quick"?helperModel():mainModel()),st={text:"",model:mdl};
     var pre=o.images?Promise.all(o.images.map(blobToDataUrl)):Promise.resolve([]);
-    return pre.then(function(urls){var content=[];
+    return pre.then(function(urls){var content=[],cc={type:"ephemeral"};if(index.settings.cacheTtl==="1h")cc.ttl="1h";
       urls.forEach(function(u){var m=u&&u.match(/^data:([^;]+);base64,(.*)$/);if(m)content.push({type:"image",source:{type:"base64",media_type:m[1],data:m[2]}})});
-      content.push({type:"text",text:prompt});
+      if(prompt&&prompt.parts)prompt.parts.forEach(function(pt){if(!str(pt.text).trim())return;var b={type:"text",text:pt.text};if(pt.cache&&index.settings.cacheOn!==false)b.cache_control=cc;content.push(b)});
+      else content.push({type:"text",text:prompt});
       var body={model:mdl,max_tokens:o.maxTokens||(o.tier==="quick"?3000:8000),stream:true,messages:[{role:"user",content:content}]};
-      if(o.system)body.system=o.system;if(o.tools)body.tools=o.tools;
+      if(o.system)body.system=o.cacheSystem&&index.settings.cacheOn!==false?[{type:"text",text:o.system,cache_control:cc}]:o.system;if(o.tools)body.tools=o.tools;
       return fetch(API_URL,{method:"POST",signal:o.signal,headers:{"content-type":"application/json","x-api-key":str(keyStore.apiKey).trim(),
         "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify(body)})})
     .then(function(res){if(!res.ok)return res.text().then(function(t){throw apiErr(res.status,t)});return readStream(res,o.onText,st)})
+    .then(function(r){addUsage(mdl,r.usage);return r},function(e){if(st.usage)addUsage(mdl,st.usage);throw e})
     .catch(function(e){
       if(e&&(e.name==="AbortError"||(o.signal&&o.signal.aborted)))throw {code:"cancelled",text:st.text};
       if(e&&e.code)throw e;
@@ -518,6 +532,7 @@ function msgEl(m,i){var isC=m.r==="c",last=i===L.msgs.length-1;
   var meta=h("div",{class:"meta"});
   if(isC&&m.cd){W.chars.forEach(function(c){var v=m.cd[c.id];if(v)meta.appendChild(h("span",{class:"chip "+(v>0?"delta-pos":"delta-neg"),text:c.name+" "+signed(v)}))})}
   if(isC&&m.pd){W.params.forEach(function(p){var v=m.pd[p.id];if(v)meta.appendChild(h("span",{class:"chip",text:p.name+" "+signed(v)}))})}
+  if(isC&&m.u&&index.settings.showUsage!==false)meta.appendChild(h("span",{class:"usage",text:usageText(m.u)}));
   if(last&&!isC&&!busy)meta.appendChild(h("button",{class:"mini strong",type:"button",text:"返答を作る",onclick:function(){generate("reply")}}));
   var acts=h("span",{class:"meta",hidden:true});
   acts.appendChild(h("button",{class:"mini",type:"button",text:"編集",onclick:function(){startEdit(m,w)}}));
@@ -572,31 +587,19 @@ function matchBook(ctx){return W.book.filter(function(l){return str(l.text).trim
 
 /* ================= prompt ================= */
 function hasDetail(c){return CH_KEYS.some(function(k){return c.s[k].trim()})}
-function charBlock(c){var A=["## "+c.name];
+function charBlock(c,withState){var A=["## "+c.name];
   CH_FIELDS.forEach(function(f){var v=c.s[f.k].trim();if(v)A.push("- "+f.label+": "+v)});
   if(c.s.appearance.trim())A.push("- 外見: "+c.s.appearance.trim());
   if(c.s.examples.trim())A.push("- セリフの例: "+c.s.examples.trim());
-  A.push("- 主人公への好感度: "+c.affinity+"（"+stageOf(c.affinity)+"）"+(c.mood?"、気分: "+c.mood:""));return A.join("\n")}
-function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||"主人公",A=[],st=W.style;
-  A.push("以下の世界を舞台にした、対話型シミュレーションの本文を書いてください。これはユーザーが個人で楽しむ創作です。");
-  A.push("","# 世界観",W.lore.trim()||"（未設定。主人公の発言から自然な舞台を補ってください）");
-  A.push("","# 主人公（ユーザー）","- 名前: "+un);if(W.user.profile.trim())A.push("- 設定: "+W.user.profile.trim());
-  var named=W.chars.filter(function(c){return c.name.trim()});
-  var pres=W.present||[],prev=histEnd>0&&L.msgs[histEnd-1]?L.msgs[histEnd-1].t:"",near=(latest||"")+"\n"+prev;
-  var onstage=named.filter(function(c){return pres.indexOf(c.id)>=0});
-  var called=latest?named.filter(function(c){return pres.indexOf(c.id)<0&&mentioned(c,latest)}).slice(0,3):[];
-  var send=onstage.concat(called).slice(0,8),detailed=send.filter(hasDetail),light=send.filter(function(c){return !hasDetail(c)});
-  if(onstage.length)A.push("","# 今この場にいる人物: "+onstage.map(function(c){return c.name}).join("、"));
-  if(detailed.length){A.push("","# 登録キャラクターの設定（この場にいる人物と、今回の入力で名前が出た人物。世界観の一般知識より優先する）");detailed.forEach(function(c){A.push(charBlock(c))})}
-  if(light.length){A.push("","# そのほかの関係人物");light.forEach(function(c){A.push("- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":"")+" 好感度"+c.affinity)})}
-  if(W.note.trim())A.push("","# 常に守るメモ",W.note.trim());
-  var book=matchBook(near);if(book.length){A.push("","# 関連する設定資料");book.forEach(function(l){A.push("- "+l.text.trim())})}
-  if(W.lt.trim())A.push("","# 長期記憶（これまでの要点）",W.lt.trim());
-  if(picked.length){A.push("","# 今の場面に関係する過去の出来事");picked.forEach(function(m){A.push("- 【"+m.title+"】"+m.sum)})}
-  A.push("","# 現在の状態");if(W.scene)A.push("- 場所・状況: "+W.scene);if(W.time)A.push("- 時間: "+W.time);
+  if(withState)A.push("- 主人公への好感度: "+c.affinity+"（"+stageOf(c.affinity)+"）"+(c.mood?"、気分: "+c.mood:""));return A.join("\n")}
+function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||"主人公",st=W.style,P1=[],P2=[],P3=[];
+  /* part 1: changes only when the world's settings change (cached) */
+  P1.push("以下の世界を舞台にした、対話型シミュレーションの本文を書いてください。これはユーザーが個人で楽しむ創作です。");
+  P1.push("","# 世界観",W.lore.trim()||"（未設定。主人公の発言から自然な舞台を補ってください）");
+  P1.push("","# 主人公（ユーザー）","- 名前: "+un);if(W.user.profile.trim())P1.push("- 設定: "+W.user.profile.trim());
+  if(W.note.trim())P1.push("","# 常に守るメモ",W.note.trim());
   var ps=W.params.filter(function(p){return str(p.name).trim()});
-  ps.forEach(function(p){A.push("- "+p.name+": "+p.val+"（"+p.min+"〜"+p.max+"）"+(p.desc?" … "+p.desc:""))});
-  A.push("","# この世界の書き方",
+  P1.push("","# この世界の書き方",
     "- 登録キャラクターを登場させるときは、登録された設定を最優先にする。",
     st.narr==="serif"?"- 会話中心で書く。セリフは「名前「セリフ」」の形にし、地の文は最小限にする。":"- 小説風に書く。地の文で情景と人物の仕草を描き、セリフは「名前「セリフ」」の形にする。",
     "- 本文の長さ: "+LEN_TXT[normLen(st.len)]+"（最後のSTATUS行は字数に含めない）。指定より大幅に短くしない。",
@@ -604,24 +607,41 @@ function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||
     "- 特定の人物との一対一の会話に固定しない。ユーザーの入力に複数の人物への言動が含まれていれば、関わった人物それぞれの反応を書く。入力で触れられていない人物も、その場にいれば自分の意思で動いてよい。誰にも向けられていない行動には、場面や周囲の反応で応える。",
     "- 各人物は、主人公への好感度が低いほどそっけなく警戒し、高いほど親しく打ち解ける。過去の出来事や長期記憶と矛盾させない。",
     "- 登場した人物ごとに、今回のやり取りで主人公への好感度がどう変わったかを-10〜+10の整数で判定する。普通のやり取りは-2〜+3程度。大きく動かすのは特別な出来事のときだけ。");
-  var exName=detailed[0]?detailed[0].name:"人物名",ex={scene:"場所や状況",time:"時間帯",cast:[{name:exName,affinity:2,mood:"うれしい"}]};
-  var exprs=detailed.map(function(c){var ls=c.images.map(function(x){return str(x.label).trim()}).filter(function(x,i,a){return x&&a.indexOf(x)===i});return ls.length>1?c.name+"（"+ls.join(" / ")+"）":null}).filter(Boolean);
-  if(exprs.length)ex.cast[0].expression="表情";
+  var ex={scene:"場所や状況",time:"時間帯",cast:[{name:"人物名",affinity:2,mood:"うれしい"}]};
   if(ps.length){ex.params={};ps.forEach(function(p){ex.params[p.name]=0})}
   if(st.choices)ex.choices=["（候補1）","（候補2）","（候補3）"];
-  A.push("- 返答の最後に改行して、次の形式の1行を必ず付ける: <<STATUS "+JSON.stringify(ex)+">>",
+  P1.push("- 返答の最後に改行して、次の形式の1行を必ず付ける: <<STATUS "+JSON.stringify(ex)+">>",
     "  - scene: 今の場所や状況（15字以内）。time: 時間帯や日付（10字以内）。",
-    "  - cast: 返答の終わりの時点でその場にいる、名前のある人物すべて（最大6人、端役は含めない）。誰もいなければ空の配列。name は登録名があればそのまま使う。affinity は主人公と関わりがなければ0。mood は気分（8文字以内）。");
-  if(exprs.length)A.push("  - expression: 次の人物だけに付ける。それぞれの選択肢から1つ選ぶ: "+exprs.join("、"));
-  if(ps.length)A.push("  - params: 各パラメータの変化量（整数、変化がなければ0）。");
-  if(st.choices)A.push("  - choices: "+un+"の次の行動や発言の候補を3つ、それぞれ30字以内で。方向性を変えること。");
-  A.push("  - この行以外に数値やステータスの話は書かない。");
+    "  - cast: 返答の終わりの時点でその場にいる、名前のある人物すべて（最大6人、端役は含めない）。誰もいなければ空の配列。name は登録名があればそのまま使う。affinity は主人公と関わりがなければ0。mood は気分（8文字以内）。",
+    "  - expression: 後で指定がある人物だけに付ける。");
+  if(ps.length)P1.push("  - params: 各パラメータの変化量（整数、変化がなければ0）。");
+  if(st.choices)P1.push("  - choices: "+un+"の次の行動や発言の候補を3つ、それぞれ30字以内で。方向性を変えること。");
+  P1.push("  - この行以外に数値やステータスの話は書かない。");
+  /* part 2: changes when people come and go, or memory is summarized (cached) */
+  var named=W.chars.filter(function(c){return c.name.trim()});
+  var pres=W.present||[],prev=histEnd>0&&L.msgs[histEnd-1]?L.msgs[histEnd-1].t:"",near=(latest||"")+"\n"+prev;
+  var onstage=named.filter(function(c){return pres.indexOf(c.id)>=0}).slice(0,8);
+  var called=latest?named.filter(function(c){return pres.indexOf(c.id)<0&&mentioned(c,latest)}).slice(0,3):[];
+  var stD=onstage.filter(hasDetail),stL=onstage.filter(function(c){return !hasDetail(c)});
+  P2.push("# 今この場にいる人物: "+(onstage.length?onstage.map(function(c){return c.name}).join("、"):"（名前のある人物はいない）"));
+  if(stD.length){P2.push("","# 登録キャラクターの設定（世界観の一般知識より優先する）");stD.forEach(function(c){P2.push(charBlock(c,false))})}
+  if(stL.length){P2.push("","# そのほかのこの場の人物");stL.forEach(function(c){P2.push("- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":""))})}
+  if(W.lt.trim())P2.push("","# 長期記憶（これまでの要点）",W.lt.trim());
+  /* part 3: changes every turn (not cached) */
+  if(called.length){P3.push("# 今回の入力で名前が出た人物の設定（今はこの場にいない）");called.forEach(function(c){P3.push(hasDetail(c)?charBlock(c,true):"- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":"")+" 好感度"+c.affinity)});P3.push("")}
+  var book=matchBook(near);if(book.length){P3.push("# 関連する設定資料");book.forEach(function(l){P3.push("- "+l.text.trim())});P3.push("")}
+  if(picked.length){P3.push("# 今の場面に関係する過去の出来事");picked.forEach(function(m){P3.push("- 【"+m.title+"】"+m.sum)});P3.push("")}
+  P3.push("# 現在の状態");if(W.scene)P3.push("- 場所・状況: "+W.scene);if(W.time)P3.push("- 時間: "+W.time);
+  ps.forEach(function(p){P3.push("- "+p.name+": "+p.val+"（"+p.min+"〜"+p.max+"）"+(p.desc?" … "+p.desc:""))});
+  onstage.forEach(function(c){P3.push("- "+c.name+"の主人公への好感度: "+c.affinity+"（"+stageOf(c.affinity)+"）"+(c.mood?"、気分: "+c.mood:""))});
+  var exprs=onstage.concat(called).map(function(c){var ls=c.images.map(function(x){return str(x.label).trim()}).filter(function(x,i,a){return x&&a.indexOf(x)===i});return ls.length>1?c.name+"（"+ls.join(" / ")+"）":null}).filter(Boolean);
+  if(exprs.length)P3.push("","# STATUSの expression（cast のこの人物にだけ付け、選択肢から1つ選ぶ）",exprs.join("、"));
   var hist=L.msgs.slice(Math.max(0,histEnd-st.hist),histEnd);
-  if(hist.length){A.push("","# 直近のやり取り");hist.forEach(function(e){A.push((e.r==="u"?"【"+un+"】":"【語り】")+e.t)})}
-  if(kind==="open")A.push("","# 指示","物語の冒頭の場面を書いてください。"+(W.opening.trim()?"舞台は「"+W.opening.trim()+"」です。":"世界観にふさわしい導入の場面を選んでください。")+un+"がその場にいて、最初の行動を選べるところで止めること。");
-  else if(kind==="continue")A.push("","# 指示",un+"はまだ行動していません。直前の場面の続きを、内容を繰り返さずに自然に書き足してください。");
-  else A.push("","# "+un+"の最新の行動・発言",latest,"","これを受けて、世界と登場人物がどう反応するかを書いてください。");
-  return A.join("\n")}
+  if(hist.length){P3.push("","# 直近のやり取り");hist.forEach(function(e){P3.push((e.r==="u"?"【"+un+"】":"【語り】")+e.t)})}
+  if(kind==="open")P3.push("","# 指示","物語の冒頭の場面を書いてください。"+(W.opening.trim()?"舞台は「"+W.opening.trim()+"」です。":"世界観にふさわしい導入の場面を選んでください。")+un+"がその場にいて、最初の行動を選べるところで止めること。");
+  else if(kind==="continue")P3.push("","# 指示",un+"はまだ行動していません。直前の場面の続きを、内容を繰り返さずに自然に書き足してください。");
+  else P3.push("","# "+un+"の最新の行動・発言",latest,"","これを受けて、世界と登場人物がどう反応するかを書いてください。");
+  return {parts:[{text:P1.join("\n"),cache:true},{text:P2.join("\n"),cache:true},{text:P3.join("\n"),cache:false}]}}
 function cleanReply(t){return str(t).replace(/<<\s*STATUS[\s\S]*$/,"").replace(/<{1,2}\s*[A-Z]*$/,"").trim()}
 function extractJson(t){t=str(t);var a=t.indexOf("{"),b=t.lastIndexOf("}");if(a<0||b<=a)return null;
   try{return JSON.parse(t.slice(a,b+1).replace(/:\s*\+(\d)/g,": $1"))}catch(e){return null}}
@@ -641,16 +661,16 @@ function generate(kind){if(busy||!W)return;if(!model.ready()){notReady();return}
   if(kind==="open")$("log").textContent="";
   var pend=h("div",{class:"msg char"},[h("span",{class:"who",text:wname()})]),body=h("div",{class:"body",text:"…"});pend.appendChild(body);$("log").appendChild(pend);scrollLog();
   var ctx=(latest||"")+"\n"+msgs.slice(Math.max(0,histEnd-6),histEnd).map(function(m){return m.t}).join("\n")+"\n"+W.scene;
-  var used=[],g=index.settings;
+  var used=[],g=index.settings,acc={in:0,cw:0,cr:0,out:0,yen:0,unknown:0};turnAcc=acc;
   pickMemories(ctx,signal).then(function(picked){used=picked;
-    return model.ask(buildPrompt(kind,latest,histEnd,picked,ctx),{system:str(g.system).trim()||DEFAULT_SYS,maxTokens:MAX_TOK[normLen(W.style.len)],signal:signal,
+    return model.ask(buildPrompt(kind,latest,histEnd,picked,ctx),{system:str(g.system).trim()||DEFAULT_SYS,cacheSystem:true,maxTokens:MAX_TOK[normLen(W.style.len)],signal:signal,
       onText:function(o){var t=cleanReply(o&&o.text);if(t){body.textContent=t;scrollLog()}}})})
-  .then(function(r){if(w!==W||l!==L)return;applyReply(kind,r&&r.text||"",used,r)})
+  .then(function(r){turnAcc=null;if(w!==W||l!==L)return;applyReply(kind,r&&r.text||"",used,r,acc)})
   .catch(function(e){if(w!==W||l!==L)return;var part=cleanReply(e&&e.text);
     if(e&&e.code==="cancelled"){if(part){L.msgs.push({id:uid(),r:"c",t:part});saveLog()}}
     else setBanner(errText(e),true)})
-  .then(function(){setBusy(false);ctl=null;if(w===W)renderLog();maybeSummarize(false)})}
-function applyReply(kind,full,used,r){var reply=cleanReply(full)||"……",st=parseStatus(full),m={id:uid(),r:"c",t:reply},un=W.user.name.trim();
+  .then(function(){turnAcc=null;setBusy(false);ctl=null;if(w===W)renderLog();maybeSummarize(false)})}
+function applyReply(kind,full,used,r,acc){var reply=cleanReply(full)||"……",st=parseStatus(full),m={id:uid(),r:"c",t:reply},un=W.user.name.trim();
   var cd={},anyC=false,pres=[];
   (Array.isArray(st.cast)?st.cast.slice(0,6):[]).forEach(function(e){if(!e||typeof e!=="object")return;var nm=str(e.name).trim().slice(0,30);
     if(!nm||nm===un||nm==="主人公"||nm==="人物名")return;var ch=findCharByName(nm);
@@ -668,6 +688,7 @@ function applyReply(kind,full,used,r){var reply=cleanReply(full)||"……",st=pa
   if(st.scene)W.scene=str(st.scene).slice(0,30);if(st.time)W.time=str(st.time).slice(0,20);
   choices=W.style.choices&&Array.isArray(st.choices)?st.choices.slice(0,3).map(function(x){return str(x).slice(0,60)}).filter(Boolean):[];
   if(kind==="reply")W.turns++;
+  if(acc&&(acc.in||acc.out))m.u={in:acc.in,cw:acc.cw,cr:acc.cr,out:acc.out,yen:Math.round(acc.yen*100)/100,unknown:acc.unknown};
   L.msgs.push(m);saveLog();saveWorld();renderStatus();
   var bits=[],mod=r&&(r.modelApplied||({quick:"ライト",default:"スタンダード",complex:"ハイ"})[r.modelTierApplied]);
   if(mod)bits.push("モデル: "+mod);if(used&&used.length)bits.push("参照した記憶: "+used.map(function(x){return x.title}).join("、"));
@@ -728,7 +749,19 @@ function renderApi(){var v=$("view-api");v.textContent="";var g=index.settings;
   v.appendChild(field("モデル名を手入力（任意）",bind(g,"mainCustom",{ph:"例: claude-opus-4-6",save:saveIndex}),"書いた場合は上の選択より優先されます。新しいモデルが出たときに使います"));
   v.appendChild(field("記憶の選択と要約",sel(g,"helperModel",MODEL_OPTS,saveIndex),"裏方の作業です。安いモデルで十分です"));
   v.appendChild(field("裏方のモデル名を手入力（任意）",bind(g,"helperCustom",{ph:"例: claude-haiku-5-5",save:saveIndex})));
-  v.appendChild(h("p",{class:"hint",text:"使った分の料金と残高は、Claude ConsoleのBillingページで確認できます。"}));
+  v.appendChild(h("h2",{class:"sec",text:"節約（キャッシュ）"}));
+  v.appendChild(h("p",{class:"note",text:"毎回同じ部分（基本指示、世界観、その場の人物の設定、長期記憶）をAnthropic側に一時保存し、次の返答で安く読み込みます。続けて会話しているあいだは、その部分の入力料金が1割以下になります。"}));
+  var cOn=h("input",{type:"checkbox",id:"cacheOn"});cOn.checked=g.cacheOn!==false;cOn.addEventListener("change",function(){g.cacheOn=cOn.checked;saveIndex()});
+  v.appendChild(h("div",{class:"row"},h("label",{class:"check"},[cOn,"キャッシュを使う"])));
+  v.appendChild(field("キャッシュの保持時間",sel(g,"cacheTtl",[["5m","5分（標準）"],["1h","1時間"]],saveIndex),"次の書き込みまでの間隔がこれを過ぎると保存が切れ、もう一度保存し直します（保存時は通常の1.25倍、1時間は2倍）。ゆっくり書く人は1時間が得になることがあります"));
+  v.appendChild(h("p",{class:"hint",text:"Opus 4.6は、この部分が4,096トークン以上ないとキャッシュが効きません。Opus 5.5やSonnet 5.5は512トークンから効きます。"}));
+  v.appendChild(h("h2",{class:"sec",text:"使用量"}));
+  var su=h("input",{type:"checkbox",id:"showUsage"});su.checked=g.showUsage!==false;su.addEventListener("change",function(){g.showUsage=su.checked;saveIndex()});
+  v.appendChild(h("div",{class:"row"},h("label",{class:"check"},[su,"返答ごとにトークン数と料金の目安を表示する"])));
+  var t=g.usage;
+  v.appendChild(h("p",{class:"note",text:t?"この端末での累計（"+new Date(t.since).toLocaleDateString("ja-JP")+"から）: "+usageText(t):"まだ使用量の記録はありません。"}));
+  v.appendChild(h("div",{class:"row"},armed("累計をリセット",function(){g.usage=null;saveIndex();renderApi()})));
+  v.appendChild(h("p",{class:"hint",text:"料金は1ドル150円、記憶の選択と要約の分も含めた目安です。正確な金額はClaude ConsoleのBillingページで確認してください。"}));
   v.appendChild(h("h2",{class:"sec",text:"書き手への基本指示（カスタム指示）"}));
   v.appendChild(h("p",{class:"note",text:"すべての世界で、毎回いちばん上位の指示として送られます。AIがどういう立場で書くか、あなたの入力をどう扱うか、文章の癖や避けたい表現などをここで決めます。世界ごとの決まりは、各世界の「記憶」ページの「常に守るメモ」に書いてください。"}));
   var sysEl=bind(g,"system",{area:1,cls:"tall",save:saveIndex});
