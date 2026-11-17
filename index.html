@@ -142,6 +142,9 @@ button,input,textarea,select{font:inherit;color:inherit}
 .field input,.field textarea,.field select,.card input,.card textarea{padding:7px 10px;border:1px solid var(--line);border-radius:3px;background:var(--surface);width:100%}
 .field textarea,.card textarea{min-height:70px;resize:vertical}
 .field textarea.tall{min-height:200px}
+textarea.paste{min-height:70px;resize:vertical;font-size:13px}
+details.imp{margin:0 0 12px;border:1px solid var(--line);border-radius:4px;padding:6px 10px;background:var(--surface)}
+details.imp summary{cursor:pointer;font-weight:700;font-size:13px}
 textarea.one{min-height:0;height:38px;resize:none;overflow:hidden;line-height:1.45;white-space:pre-wrap}
 .field textarea.one:focus,.card textarea.one:focus{height:auto;min-height:6.5em;overflow:auto}
 .field textarea:not(.one):focus,.card textarea:not(.one):focus{min-height:55vh}
@@ -283,7 +286,7 @@ var DEFAULT_SYS=["あなたはAIアシスタントとしてではなく、この
   "・登場人物はそれぞれの事情と意思で動く。主人公に都合のよい展開ばかりにしない。"].join("\n");
 var STYLE_DEF={narr:"novel",len:1,choices:true,pick:"ai",hist:12,chunk:10,autoCast:true};
 function blankCharRec(){var s={};CH_KEYS.forEach(function(k){s[k]=""});return {id:uid(),name:"",auto:false,s:s,images:[],main:null,cur:null,affinity:0,mood:""}}
-function blankWorld(){return {v:4,present:[],id:uid(),updatedAt:0,sample:false,name:"",lore:"",user:{name:"",profile:""},opening:"",greeting:"",note:"",
+function blankWorld(){return {v:4,present:[],title:"",period:"",id:uid(),updatedAt:0,sample:false,name:"",lore:"",user:{name:"",profile:""},opening:"",greeting:"",note:"",
   style:clone(STYLE_DEF),image:null,chars:[],params:[],scene:"",time:"",turns:0,focus:null,lt:"",mem:[],book:[],
   shortcuts:[{id:uid(),label:"場面を進める",text:"場面を次へ進める"},{id:uid(),label:"時間を進める",text:"少し時間を進める"},{id:uid(),label:"情景を詳しく",text:"周囲の情景や人物の様子を詳しく描写する"}]}}
 function sampleWorld(id){var w=blankWorld();if(id)w.id=id;w.sample=true;w.name="汐風町（サンプル）";
@@ -298,14 +301,18 @@ function sampleWorld(id){var w=blankWorld();if(id)w.id=id;w.sample=true;w.name="
   w.book=[{id:uid(),keys:"祖父,おじいさん",text:"ミナトの祖父は三年前に亡くなった。店の奥の棚には祖父の蔵書がそのまま残っていて、売り物にはしていない。"}];
   return w}
 function normChar(c){var d=blankCharRec();if(!c||typeof c!=="object")return d;
+  if(!c.s){c=Object.assign({},c);c.s={};CH_KEYS.forEach(function(k){if(c[k]!=null)c.s[k]=Array.isArray(c[k])?c[k].join("\n"):str(c[k])})}
+  if(!c.id)c=Object.assign({},c,{id:uid()});
   ["id","name","auto","main","cur","affinity","mood"].forEach(function(k){if(c[k]!==undefined&&c[k]!==null)d[k]=c[k]});
   if(c.s)CH_KEYS.forEach(function(k){if(typeof c.s[k]==="string")d.s[k]=c.s[k]});
   if(Array.isArray(c.images))d.images=c.images;d.affinity=clamp(Math.round(+d.affinity||0),-100,100);d.name=str(d.name);return d}
 function normWorld(w){var d=blankWorld();if(!w||typeof w!=="object")return d;
-  ["id","updatedAt","sample","name","lore","opening","greeting","note","image","scene","time","turns","focus","lt"].forEach(function(k){if(w[k]!==undefined&&w[k]!==null)d[k]=w[k]});
+  ["id","updatedAt","sample","name","title","period","lore","opening","greeting","note","image","scene","time","turns","focus","lt"].forEach(function(k){if(w[k]!==undefined&&w[k]!==null)d[k]=w[k]});
   if(w.user){d.user.name=str(w.user.name);d.user.profile=str(w.user.profile)}
   if(w.style)for(var k in d.style){if(w.style[k]!==undefined)d.style[k]=w.style[k]}
-  ["params","mem","book","shortcuts"].forEach(function(k){if(Array.isArray(w[k]))d[k]=w[k]});
+  ["params","mem","book","shortcuts"].forEach(function(k){if(Array.isArray(w[k]))d[k]=w[k].filter(function(x){return x&&typeof x==="object"}).map(function(x){if(!x.id)x.id=uid();return x})});
+  d.params.forEach(function(p){p.name=str(p.name);p.min=+p.min||0;p.max=p.max==null?100:+p.max||0;p.val=p.val==null?p.min:+p.val||0;p.desc=str(p.desc)});
+  d.book.forEach(function(b){b.keys=Array.isArray(b.keys)?b.keys.join(","):str(b.keys);b.text=str(b.text)});
   if(Array.isArray(w.chars))d.chars=w.chars.map(normChar);
   if(w.v!==4)d.focus=null;if(Array.isArray(w.present))d.present=w.present;d.v=4;
   d.style.len=normLen(d.style.len);d.style.hist=clamp(int(d.style.hist)||12,2,40);d.style.chunk=clamp(int(d.style.chunk)||10,4,30);return d}
@@ -391,7 +398,7 @@ var model={canImg:true,
       urls.forEach(function(u){var m=u&&u.match(/^data:([^;]+);base64,(.*)$/);if(m)content.push({type:"image",source:{type:"base64",media_type:m[1],data:m[2]}})});
       content.push({type:"text",text:prompt});
       var body={model:mdl,max_tokens:o.maxTokens||(o.tier==="quick"?3000:8000),stream:true,messages:[{role:"user",content:content}]};
-      if(o.system)body.system=o.system;
+      if(o.system)body.system=o.system;if(o.tools)body.tools=o.tools;
       return fetch(API_URL,{method:"POST",signal:o.signal,headers:{"content-type":"application/json","x-api-key":str(keyStore.apiKey).trim(),
         "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify(body)})})
     .then(function(res){if(!res.ok)return res.text().then(function(t){throw apiErr(res.status,t)});return readStream(res,o.onText,st)})
@@ -406,6 +413,8 @@ function loadImages(){return idbReady.then(function(db){if(!db)return;return new
   req.onsuccess=function(){var c=req.result;if(c){imgData[c.key]=c.value;c.continue()}else res()};req.onerror=function(){res()}})}).then(function(){if(currentView()!=="welcome")route()}).catch(function(){})}
 function initCaps(){capsReady=true;try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}loadImages()}
 function errText(e){var c=e&&e.code;
+  if(c==="parse")return "結果をうまく読み取れませんでした。もう一度押してください。";
+  if(c==="notfound")return "作品や人物を特定できませんでした（"+str(e.message).slice(0,60)+"）。名前の書き方を変えて試してください。";
   return c==="auth"?"APIキーが正しくありません。「API設定」でキーを確認してください。":
     c==="permission"?"このAPIキーには、この操作の権限がありません。Claude Consoleでキーの設定を確認してください。":
     c==="credit"?"APIクレジットの残高が足りません。Claude ConsoleのBillingでクレジットを追加してください。":
@@ -742,10 +751,76 @@ function renderLobby(){var v=$("view-lobby");v.textContent="";
     h("span",{class:"who"},h("span",null,[h("strong",{text:p.name}),h("div",{class:"hint",text:p.desc})])),
     h("button",{class:"mini strong",type:"button",text:"追加",onclick:function(){addPreset(p)}})]))});
   v.appendChild(h("h2",{class:"sec",text:"世界を読み込む"}));
-  v.appendChild(h("p",{class:"note",text:"この画面で書き出した世界のファイルを、新しい世界として追加します。"}));
+  v.appendChild(h("p",{class:"note",text:"書き出した世界のファイルや、別の会話でClaudeに作ってもらった世界のデータを、新しい世界として追加します。ファイルを選ぶか、データを貼り付けてください。"}));
   var fin=h("input",{type:"file",accept:".json,application/json",class:"sr-only",id:"impFile"});
   fin.addEventListener("change",function(){var f=fin.files&&fin.files[0];fin.value="";if(f)importFile(f)});
-  v.appendChild(h("div",{class:"row"},[fin,h("label",{class:"btn ghost",htmlFor:"impFile",text:"ファイルから読み込む"}),h("span",{class:"hint",id:"ioNote",text:ioNote})]))}
+  v.appendChild(h("div",{class:"row"},[fin,h("label",{class:"btn ghost",htmlFor:"impFile",text:"ファイルから読み込む"}),h("span",{class:"hint",id:"ioNote",text:ioNote})]));
+  v.appendChild(pasteBox("worldPaste",function(t){importWorldText(t)}))}
+
+
+/* ================= AI lookup (works / characters) ================= */
+var LOOKUP_MODEL="claude-opus-5-5",lookupBusy=false,lkMsg={world:"",char:""};
+function lookupAsk(prompt){
+  return model.ask(prompt+"\n\nまずWeb検索で事実を確認してから書いてください。最後の出力はJSONだけにしてください。",{modelId:LOOKUP_MODEL,maxTokens:12000,tools:[{type:"web_search_20250305",name:"web_search",max_uses:5}]})
+  .then(function(r){var j=extractJson(r.text);if(!j)throw {code:"parse"};return {j:j,web:true}})
+  .catch(function(e){if(e&&/^(cancelled|credit|auth|network|rate_limited)$/.test(e.code))throw e;
+    return model.ask(prompt,{modelId:LOOKUP_MODEL,maxTokens:12000}).then(function(r){var j=extractJson(r.text);if(!j)throw {code:"parse"};return {j:j,web:false}})})}
+var LOOKUP_HINT="Claude Opus 5.5がWeb検索で調べて記入します。基本指示や世界ごとの指示の影響は受けません。1回あたり数十円程度かかります。";
+function lookupBtn(label,needsConfirm,fn){var on=false,t=null,b=h("button",{class:"btn",type:"button",text:label});
+  b.addEventListener("click",function(){if(lookupBusy)return;
+    if(needsConfirm()&&!on){on=true;b.textContent="入力済みの内容を上書きします（もう一度押す）";t=setTimeout(function(){on=false;b.textContent=label},5000);return}
+    clearTimeout(t);on=false;b.textContent=label;fn()});return b}
+function setLk(kind,t){lkMsg[kind]=t;var e=$(kind==="world"?"lkWorldNote":"lkCharNote");if(e)e.textContent=t}
+function worldPrompt(title,period){
+  return ["あなたは創作用の設定資料を作る編集者です。作品「"+title+"」の世界観を、対話型シミュレーション（ユーザーがその世界に入り込み、登場人物と交流する遊び）のための設定資料としてまとめてください。",
+    period?"物語の時点: "+period+"。この時点までの情報だけを使い、それより後の展開（人物の正体、生死、結末など）は書かないこと。":"物語の時点の指定はありません。作品の序盤を基準にし、終盤の展開や結末は書かないこと。",
+    "- 原作の文章や台詞をそのまま引用せず、自分の言葉で要約する。",
+    "- 確信の持てない情報は書かない。作品を特定できない場合は {\"error\":\"理由\"} とだけ出力する。",
+    "","次の形式のJSONだけを出力してください。",
+    '{"name":"世界の名前（作品名と時点が分かる短い名前）","lore":"世界観。時代と舞台、社会の仕組み、特殊な力や用語、主要な勢力や組織、この時点での状況を、800〜1500字で詳しく","opening":"物語を始めるのにふさわしい場所と状況（30字以内）","characters":[{"name":"人物名","role":"立場（30字以内）"}],"book":[{"keys":"キーワード1,キーワード2","text":"用語・場所・組織の説明（100字以内）"}]}',
+    "- characters: この時点で登場している主要人物を最大12人。",
+    "- book: 会話に出てきたときに参照すると役立つ重要な用語・場所・組織を最大10個。"].join("\n")}
+function charPrompt(name,w){
+  var A=["あなたは創作用の設定資料を作る編集者です。次の世界に登場する人物「"+name+"」の設定を、対話型シミュレーションでこの人物を再現するための資料としてまとめてください。",
+    "","# この世界の情報（参考資料）"];
+  if(str(w.title).trim())A.push("- 作品名: "+w.title.trim());
+  if(str(w.period).trim())A.push("- 物語の時点: "+w.period.trim());
+  A.push("- 世界の名前: "+(w.name.trim()||"（未設定）"));
+  if(w.lore.trim())A.push("- 世界観:",w.lore.trim().slice(0,3000));
+  if(w.user.profile.trim())A.push("- 主人公（ユーザー）の設定: "+w.user.profile.trim().slice(0,500));
+  A.push("","# 書き方",
+    "- 物語の時点が分かる場合は、その時点のこの人物として書く。それより後の展開（正体、生死、結末など）は書かない。",
+    "- 原作の文章や台詞をそのまま引用せず、自分の言葉で書く。セリフの例は、この人物が言いそうなオリジナルの短いセリフにする。",
+    "- 確信の持てない情報は書かない。人物を特定できない場合は {\"error\":\"理由\"} とだけ出力する。",
+    "","次の形式のJSONだけを出力してください。",
+    '{"role":"立場・年齢","first":"一人称","callUser":"主人公をどう呼びそうか","relation":"主人公との関係（主人公の設定から考える。不明なら初対面）","personality":"性格（200字程度）","speech":"口調・話し方。語尾や口ぐせの特徴（150字程度）","background":"経歴・背景（300字程度）","likes":"好きなもの・喜ぶこと","dislikes":"嫌いなもの・怒ること","appearance":"外見（150字程度）","other":"能力・技・人間関係など（300字程度）","examples":"口調が分かるオリジナルのセリフを3つ。改行区切り"}');
+  return A.join("\n")}
+function lookupGuard(kind){if(!model.ready()){setLk(kind,"APIキーが入力されていません。先に「API設定」でキーを入力してください。");return false}return true}
+function worldLookup(){var w=W,t=str(w.title).trim();if(!t){setLk("world","作品名を入力してください。");return}if(!lookupGuard("world"))return;
+  lookupBusy=true;setLk("world","調べています…（1〜2分かかることがあります）");
+  lookupAsk(worldPrompt(t,str(w.period).trim())).then(function(res){var j=res.j;if(j.error)throw {code:"notfound",message:j.error};if(!j.lore)throw {code:"parse"};
+    if(w!==W){setLk("world","別の世界に移動したため、結果を反映しませんでした。");return}
+    w.lore=str(j.lore);if(j.name&&(!w.name.trim()||w.name==="新しい世界"))w.name=str(j.name).slice(0,40);
+    if(j.opening&&!w.opening.trim()){w.opening=str(j.opening).slice(0,60);if(!w.scene)w.scene=w.opening}
+    var added=0,bk=0;
+    (Array.isArray(j.characters)?j.characters:[]).slice(0,15).forEach(function(c){var nm=str(c&&c.name).trim().slice(0,30);if(!nm||findCharByName(nm)||w.chars.length>=40)return;
+      var ch=blankCharRec();ch.name=nm;ch.s.role=str(c.role).slice(0,60);ch.auto=true;w.chars.push(ch);added++});
+    (Array.isArray(j.book)?j.book:[]).slice(0,12).forEach(function(b){var k=str(b&&b.keys).trim(),tx=str(b&&b.text).trim();if(!k||!tx||w.book.some(function(x){return x.keys===k}))return;w.book.push({id:uid(),keys:k,text:tx});bk++});
+    w.sample=false;saveWorld();
+    lkMsg.world="記入しました（"+(res.web?"Web検索で確認":"AIの知識のみ")+"）。人物"+added+"人、キーワードブック"+bk+"件を追加しました。内容は必ず確認してください。";
+    if(currentView()==="room")renderRoom()})
+  .catch(function(e){setLk("world",errText(e))}).then(function(){lookupBusy=false})}
+var LK_KEYS=["role","first","callUser","relation","personality","speech","background","likes","dislikes","appearance","other","examples"];
+function charLookup(c){var w=W,nm=str(c.name).trim();if(!nm){setLk("char","先に名前を入力してください。");return}if(!lookupGuard("char"))return;
+  lookupBusy=true;setLk("char","調べています…（1〜2分かかることがあります）");
+  lookupAsk(charPrompt(nm,w)).then(function(res){var j=res.j;if(j.error)throw {code:"notfound",message:j.error};
+    if(w!==W||w.chars.indexOf(c)<0){setLk("char","別の世界に移動したため、結果を反映しませんでした。");return}
+    var n=0;LK_KEYS.forEach(function(k){var v=j[k];if(Array.isArray(v))v=v.join("\n");v=str(v).trim();if(v){c.s[k]=v.slice(0,1500);n++}});
+    if(!n)throw {code:"parse"};
+    c.auto=false;w.sample=false;saveWorld();
+    lkMsg.char="「"+nm+"」の"+n+"項目を記入しました（"+(res.web?"Web検索で確認":"AIの知識のみ")+"）。内容は必ず確認してください。";
+    if(currentView()==="cast"&&editId===c.id)renderCast()})
+  .catch(function(e){setLk("char",errText(e))}).then(function(){lookupBusy=false})}
 
 /* ================= built-in preset worlds ================= */
 function mkChar(name,o){var c=blankCharRec();c.name=name;for(var k in o){if(c.s[k]!==undefined)c.s[k]=o[k]}return c}
@@ -831,6 +906,11 @@ function imageList(box,owner,isChar,redraw){box.textContent="";
 function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
   v.appendChild(h("h2",{class:"sec",text:"世界観"}));
   v.appendChild(h("p",{class:"note",text:"まずここを書きます。世界観さえあれば会話を始められます。既存の作品世界を書けば、その世界の人物は登録しなくても登場します。"}));
+  v.appendChild(h("div",{class:"card"},[h("strong",{text:"版権作品から作る"}),h("span",{class:"hint",text:LOOKUP_HINT}),
+    field("作品名",bind(W,"title",{ph:"例: 呪術廻戦"})),
+    field("物語の時点（任意）",bind(W,"period",{ph:"例: 序盤、虎杖の高専入学直後"}),"書いておくと、その時点より先の展開を出さないようにします"),
+    h("div",{class:"row"},[lookupBtn("AI検索",function(){return !!W.lore.trim()},worldLookup),h("span",{class:"hint",id:"lkWorldNote",text:lkMsg.world})]),
+    h("span",{class:"hint",text:"世界観を書き込み、主要な人物とキーワードブックを追加します。人物は名前と立場だけなので、詳しくは各人物の編集画面の「AI検索」で埋めてください。"})]));
   v.appendChild(field("世界の名前",bind(W,"name",{after:function(){touched();$("barTitle").textContent=wname()}})));
   v.appendChild(field("世界観",bind(W,"lore",{area:1,cls:"tall",after:touched,ph:"時代、場所、文化、勢力、ルール、雰囲気など。箇条書きでも文章でも構いません"}),"詳しいほど再現度が上がります"));
   v.appendChild(h("div",{class:"row"},[h("a",{class:"btn",href:"#chat",text:"この世界で会話する"})]));
@@ -850,6 +930,13 @@ function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
   v.appendChild(h("div",{class:"row",style:"margin-top:10px"},[
     h("button",{class:"btn ghost",type:"button",text:"キャラを追加",onclick:function(){var c=blankCharRec();c.name="";W.chars.push(c);touched();saveWorld();editId=c.id;location.hash="#cast";route()}})]));
   v.appendChild(h("div",{class:"row"},check(W.style,"autoCast","会話に登場した人物を自動でリストに追加する")));
+  var cin=h("input",{type:"file",accept:".json,application/json",class:"sr-only",id:"charFile"});
+  cin.addEventListener("change",function(){var f=cin.files&&cin.files[0];cin.value="";if(!f)return;var fr=new FileReader();fr.onload=function(){if(importCharText(String(fr.result)))drawCast()};fr.readAsText(f)});
+  var cdet=h("details",{class:"imp"},[h("summary",{text:"キャラを読み込む"}),
+    h("p",{class:"hint",text:"別の会話でClaudeに作ってもらったキャラクターのデータを、この世界に追加します。同じ名前の人物がいれば、その人物の設定を更新します。"}),
+    h("div",{class:"row"},[cin,h("label",{class:"btn ghost",htmlFor:"charFile",text:"ファイルから読み込む"}),h("span",{class:"hint",id:"charIoNote",text:charIoNote})]),
+    pasteBox("charPaste",function(t){var ok=importCharText(t);if(ok)drawCast();return ok})]);
+  v.appendChild(cdet);
 
   v.appendChild(h("h2",{class:"sec",text:"あなた（主人公）"}));
   v.appendChild(field("名前",bind(W.user,"name",{after:touched}),"空欄なら「あなた」として扱われます"));
@@ -908,12 +995,15 @@ function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
 function setRoomNote(t){var e=$("roomNote");if(e)e.textContent=t}
 
 /* ================= character editor ================= */
-function renderCast(){var v=$("view-cast");v.textContent="";if(!W)return;var c=findChar(editId);
+var lkCharFor=null;
+function renderCast(){var v=$("view-cast");v.textContent="";if(!W)return;var c=findChar(editId);if(lkCharFor!==editId&&!lookupBusy){lkMsg.char="";lkCharFor=editId}
   if(!c){v.appendChild(h("p",{class:"note",text:"編集するキャラクターが選ばれていません。"}));v.appendChild(h("a",{class:"btn ghost",href:"#room",text:"世界のページへ戻る"}));return}
   function edited(){if(c.auto){c.auto=false}touched()}
   v.appendChild(h("h2",{class:"sec",text:"キャラクター設定"}));
   v.appendChild(h("p",{class:"note",text:"空欄の項目は世界観から補われます。書いた項目は世界観より優先されます。"}));
   v.appendChild(field("名前",bind(c,"name",{after:edited}),"会話に出てくる呼び名と合わせてください"));
+  v.appendChild(h("div",{class:"row"},[lookupBtn("AI検索",function(){return CH_KEYS.some(function(k){return k!=="role"&&c.s[k].trim()})},function(){charLookup(c)}),h("span",{class:"hint",id:"lkCharNote",text:lkMsg.char})]));
+  v.appendChild(h("p",{class:"hint",text:"名前と、この世界の世界観・作品名から、その作品の人物として各項目を埋めます。"+LOOKUP_HINT}));
   var pairBox=null;
   CH_FIELDS.forEach(function(f){var el=bind(c.s,f.k,{area:f.area,after:edited}),d=field(f.label,el,f.hint);
     if(f.pair){if(!pairBox||pairBox.childNodes.length>=2){pairBox=h("div",{class:"pair"});v.appendChild(pairBox)}pairBox.appendChild(d)}else{pairBox=null;v.appendChild(d)}});
@@ -985,21 +1075,43 @@ function showExportText(w,l){var box=$("ioBox");if(!box)return;box.textContent="
   var ta=h("textarea",{id:"expText","aria-label":"書き出した内容",style:"width:100%;min-height:140px"});ta.value=JSON.stringify({format:"simulation-world",v:3,world:w,log:l,images:{}});
   box.appendChild(ta);box.appendChild(h("div",{class:"row",style:"margin-top:6px"},h("button",{class:"btn ghost",type:"button",text:"内容をコピー",onclick:function(){
     try{navigator.clipboard.writeText(ta.value).then(function(){setRoomNote("コピーしました。")}).catch(function(){ta.select();setRoomNote("自動でコピーできませんでした。選択した状態にしたので、手動でコピーしてください。")})}catch(e){ta.select()}}})))}
-function importFile(file){if(busy)return;setIo("読み込んでいます…");
-  var fr=new FileReader();fr.onerror=function(){setIo("ファイルを読めませんでした。")};
-  fr.onload=function(){var j;try{j=JSON.parse(String(fr.result))}catch(e){j=null}
-    if(!j||j.format!=="simulation-world"||!j.world){setIo("このファイルは読み込めません。この画面で書き出した世界のファイルを選んでください。");return}
+function addWorldData(j){
     var w=normWorld(j.world);w.id=uid();w.sample=false;var imgs=j.images||{},jobs=[];
     function remap(rec){if(!rec)return null;var n={id:uid(),label:rec.label||"",assetId:null},src=imgs[rec.id];
       if(src)jobs.push(function(){return dataUrlToBlob(src).then(function(b){storeImage(n,{blob:b,dataUrl:src},w)}).catch(function(){})});return {old:rec.id,rec:n}}
     var wi=remap(w.image);w.image=wi?wi.rec:null;
     w.chars.forEach(function(c){var map={};c.images=c.images.map(function(r){var x=remap(r);map[x.old]=x.rec.id;return x.rec});c.main=map[c.main]||(c.images[0]?c.images[0].id:null);c.cur=null});
-    var l=normLog(j.log,w.id);l.id=w.id;
+    if(!w.scene&&w.opening)w.scene=w.opening;
+    var l=j.log&&Array.isArray(j.log.msgs)&&j.log.msgs.length?normLog(j.log,w.id):freshLog(w);l.id=w.id;
+    l.msgs=l.msgs.filter(function(m){return m&&typeof m.t==="string"}).map(function(m){if(!m.id)m.id=uid();if(m.r!=="u")m.r="c";return m});
     index.worlds.push({id:w.id,name:w.name.trim()||"名前のない世界",sample:false});saveIndex();
     w.updatedAt=Date.now();lsSet(K.w(w.id),w);dbPut("w_"+w.id,w);l.updatedAt=Date.now();lsSet(K.l(w.id),l);dbPut("l_"+w.id,l);
     var chain=Promise.resolve();jobs.forEach(function(job){chain=chain.then(job)});
-    chain.then(function(){setIo("「"+(w.name||"名前のない世界")+"」を読み込みました。");renderLobby()})};
-  fr.readAsText(file)}
+    return chain.then(function(){return w})}
+function charList(j){var arr=Array.isArray(j)?j:Array.isArray(j.chars)?j.chars:j.char?[j.char]:j.name?[j]:[];
+  return arr.filter(function(c){return c&&typeof c==="object"&&str(c.name).trim()})}
+function addCharsData(j){if(!W)return {added:0,updated:0};var added=0,updated=0;
+  charList(j).forEach(function(raw){var c=normChar(raw),ex=W.chars.filter(function(x){return x.name.trim()===c.name.trim()})[0];
+    if(ex){CH_KEYS.forEach(function(k){if(c.s[k].trim())ex.s[k]=c.s[k]});ex.auto=false;updated++}
+    else if(W.chars.length<60){c.id=uid();c.images=[];c.main=null;c.cur=null;c.auto=false;c.affinity=clamp(int(raw.affinity),-100,100);W.chars.push(c);added++}});
+  if(added||updated){touched();saveWorld()}return {added:added,updated:updated}}
+function parseImport(text){var t=str(text).trim(),j=null;try{j=JSON.parse(t)}catch(e){j=extractJson(t)}return j}
+function importWorldText(text){if(busy)return;var j=parseImport(text);
+  if(j&&j.format==="simulation-character"){setIo("これはキャラクターのデータです。世界に入って「世界」ページの「キャラを読み込む」から読み込んでください。");return}
+  if(!j||!j.world||(j.format&&j.format!=="simulation-world")){setIo("読み込めませんでした。SimulationWORLDの世界のデータ（\"format\":\"simulation-world\"）か確認してください。");return}
+  setIo("読み込んでいます…");
+  addWorldData(j).then(function(w){setIo("「"+(w.name||"名前のない世界")+"」を読み込みました。");renderLobby()}).catch(function(){setIo("読み込みに失敗しました。")})}
+function importFile(file){if(busy)return;setIo("読み込んでいます…");
+  var fr=new FileReader();fr.onerror=function(){setIo("ファイルを読めませんでした。")};
+  fr.onload=function(){importWorldText(String(fr.result))};fr.readAsText(file)}
+var charIoNote="";
+function setCharIo(t){charIoNote=t;var e=$("charIoNote");if(e)e.textContent=t}
+function importCharText(text){var j=parseImport(text);
+  if(j&&(j.format==="simulation-world"||j.world)){setCharIo("これは世界のデータです。ロビーの「世界を読み込む」から読み込んでください。");return false}
+  if(!j||!charList(j).length){setCharIo("読み込めませんでした。SimulationWORLDのキャラクターのデータ（\"format\":\"simulation-character\"）か確認してください。");return false}
+  var r=addCharsData(j);setCharIo("追加 "+r.added+"人、更新 "+r.updated+"人。同じ名前の人物は、データにある項目だけ上書きしました。");return true}
+function pasteBox(id,onLoad){var ta=h("textarea",{id:id,"aria-label":"データを貼り付け",placeholder:"ここにデータを貼り付けて「貼り付けた内容を読み込む」"});ta.className="paste";
+  return h("div",{class:"field"},[ta,h("div",{class:"row",style:"margin:6px 0 0"},h("button",{class:"btn ghost",type:"button",text:"貼り付けた内容を読み込む",onclick:function(){if(!ta.value.trim())return;if(onLoad(ta.value)!==false)ta.value=""}}))])}
 
 /* ================= shell ================= */
 var VIEWS=["welcome","api","lobby","room","cast","memory","chat"],IN_WORLD={room:1,cast:1,memory:1,chat:1};
