@@ -102,6 +102,18 @@ button,input,textarea,select{font:inherit;color:inherit}
 .cast button{font-size:11px;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:1px 8px;cursor:pointer;font-variant-numeric:tabular-nums}
 .cast button[aria-pressed="true"]{border-color:var(--ink);font-weight:700}
 
+.pcol{display:flex;flex-direction:column;gap:6px;min-width:0}
+.clock{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:4px 6px 4px 9px;font-size:13px;font-weight:700}
+.clock-t{flex:1;min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.clock-lock{flex:none;width:30px;height:30px;border:1px solid var(--line);border-radius:3px;background:var(--bg);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);padding:0}
+.clock-lock[aria-pressed="true"]{color:var(--warm);border-color:var(--warm)}
+.clock-lock:disabled{cursor:default;opacity:.6}
+.clock-lock svg{width:16px;height:16px}
+.cp{display:block;font-size:11px;margin-top:2px}
+.cp-top{display:flex;justify-content:space-between;gap:6px;font-variant-numeric:tabular-nums}
+.card input[type=password]{flex:1;min-width:0;width:auto}
+.ro{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);padding:6px 0;font-size:14px}
+.ro span:last-child{font-variant-numeric:tabular-nums;font-weight:700}
 .stage-toggle{display:flex;gap:8px;align-items:center;margin:0 16px 8px;padding:6px 10px;border:1px solid var(--line);background:var(--surface);border-radius:4px;cursor:pointer;text-align:left;font-size:13px;min-width:0}
 .st-arrow{flex:none;width:1em;color:var(--muted)}
 .st-sum{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:700}
@@ -157,6 +169,7 @@ textarea.one{min-height:0;height:38px;resize:none;overflow:hidden;line-height:1.
 .field input[type=checkbox],.card input[type=checkbox],.field input[type=radio]{width:auto}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .sec{font-family:var(--font-display);font-size:17px;margin:20px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+h3.sub{font-size:14px;margin:14px 0 6px}
 .sec:first-child{border-top:0;margin-top:4px;padding-top:0}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
 .card{border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:10px;margin-bottom:10px;display:flex;flex-direction:column;gap:6px}
@@ -209,6 +222,7 @@ textarea.one{min-height:0;height:38px;resize:none;overflow:hidden;line-height:1.
       <span class="st-act" id="stageAct">開く</span>
     </button>
     <section class="stage" id="stage" hidden>
+      <div class="pcol">
       <div class="portrait">
         <img id="portrait" alt="" hidden>
         <div class="placeholder" id="placeholder">
@@ -216,12 +230,13 @@ textarea.one{min-height:0;height:38px;resize:none;overflow:hidden;line-height:1.
           <span>世界や人物の画像は「世界」ページで追加できます</span>
         </div>
       </div>
+        <div class="clock"><span class="clock-t" id="clockTxt">—</span><button type="button" class="clock-lock" id="timeLockBtn" aria-pressed="false" aria-label="時間の進行をロック"></button></div>
+      </div>
       <div class="params">
         <span class="label">この場にいる人物</span>
         <div class="present" id="presentList"></div>
         <dl class="stats">
           <dt>場所</dt><dd id="stScene">—</dd>
-          <dt>時間</dt><dd id="stTime">—</dd>
         </dl>
         <div id="customParams"></div>
       </div>
@@ -289,8 +304,8 @@ var DEFAULT_SYS=["あなたはAIアシスタントとしてではなく、この
   "・世界観に本来いる人物や場所は、登録がなくても世界観に沿って自然に登場させる。",
   "・登場人物はそれぞれの事情と意思で動く。主人公に都合のよい展開ばかりにしない。"].join("\n");
 var STYLE_DEF={narr:"novel",len:1,choices:true,pick:"ai",hist:12,chunk:10,autoCast:true};
-function blankCharRec(){var s={};CH_KEYS.forEach(function(k){s[k]=""});return {id:uid(),name:"",auto:false,s:s,images:[],main:null,cur:null,affinity:0,mood:""}}
-function blankWorld(){return {v:4,present:[],title:"",period:"",id:uid(),updatedAt:0,sample:false,name:"",lore:"",user:{name:"",profile:""},opening:"",greeting:"",note:"",
+function blankCharRec(){var s={};CH_KEYS.forEach(function(k){s[k]=""});return {id:uid(),name:"",auto:false,s:s,images:[],main:null,cur:null,params:[],mood:""}}
+function blankWorld(){return {v:4,present:[],title:"",period:"",timeLock:false,locked:false,secret:"",id:uid(),updatedAt:0,sample:false,name:"",lore:"",user:{name:"",profile:""},opening:"",greeting:"",note:"",
   style:clone(STYLE_DEF),image:null,chars:[],params:[],scene:"",time:"",turns:0,focus:null,lt:"",mem:[],book:[],
   shortcuts:[{id:uid(),label:"場面を進める",text:"場面を次へ進める"},{id:uid(),label:"時間を進める",text:"少し時間を進める"},{id:uid(),label:"情景を詳しく",text:"周囲の情景や人物の様子を詳しく描写する"}]}}
 function sampleWorld(id){var w=blankWorld();if(id)w.id=id;w.sample=true;w.name="汐風町（サンプル）";
@@ -307,15 +322,21 @@ function sampleWorld(id){var w=blankWorld();if(id)w.id=id;w.sample=true;w.name="
 function normChar(c){var d=blankCharRec();if(!c||typeof c!=="object")return d;
   if(!c.s){c=Object.assign({},c);c.s={};CH_KEYS.forEach(function(k){if(c[k]!=null)c.s[k]=Array.isArray(c[k])?c[k].join("\n"):str(c[k])})}
   if(!c.id)c=Object.assign({},c,{id:uid()});
-  ["id","name","auto","main","cur","affinity","mood"].forEach(function(k){if(c[k]!==undefined&&c[k]!==null)d[k]=c[k]});
+  ["id","name","auto","main","cur","mood"].forEach(function(k){if(c[k]!==undefined&&c[k]!==null)d[k]=c[k]});
   if(c.s)CH_KEYS.forEach(function(k){if(typeof c.s[k]==="string")d.s[k]=c.s[k]});
-  if(Array.isArray(c.images))d.images=c.images;d.affinity=clamp(Math.round(+d.affinity||0),-100,100);d.name=str(d.name);return d}
+  if(Array.isArray(c.images))d.images=c.images;d.params=normCParams(c.params);
+  if(!d.params.length&&c.affinity&&+c.affinity!==0){var av=clamp(Math.round((+c.affinity+100)/2),1,100);d.params=[{id:uid(),name:"好感度",min:1,max:100,val:av,base:50,desc:"主人公への好意。低いほど冷たく避け、高いほど親しく好意的になる"}]}
+  d.name=str(d.name);return d}
+function normCParams(arr){return (Array.isArray(arr)?arr:[]).filter(function(p){return p&&typeof p==="object"}).map(function(p){var mn=p.min==null?1:+p.min||0,mx=p.max==null?100:+p.max||0;if(mx<mn)mx=mn;
+  var v=clamp(p.val==null?Math.round((mn+mx)/2):+p.val||0,mn,mx);return {id:p.id||uid(),name:str(p.name),min:mn,max:mx,val:v,base:p.base==null?v:+p.base,desc:str(p.desc)}})}
+function paramsText(c){return (c.params||[]).filter(function(p){return str(p.name).trim()}).map(function(p){return p.name+" "+p.val+"/"+p.max}).join("、")}
 function normWorld(w){var d=blankWorld();if(!w||typeof w!=="object")return d;
-  ["id","updatedAt","sample","name","title","period","lore","opening","greeting","note","image","scene","time","turns","focus","lt"].forEach(function(k){if(w[k]!==undefined&&w[k]!==null)d[k]=w[k]});
+  ["id","updatedAt","sample","name","title","period","lore","opening","greeting","note","image","scene","time","turns","focus","lt","timeLock","locked","secret"].forEach(function(k){if(w[k]!==undefined&&w[k]!==null)d[k]=w[k]});
   if(w.user){d.user.name=str(w.user.name);d.user.profile=str(w.user.profile)}
   if(w.style)for(var k in d.style){if(w.style[k]!==undefined)d.style[k]=w.style[k]}
   ["params","mem","book","shortcuts"].forEach(function(k){if(Array.isArray(w[k]))d[k]=w[k].filter(function(x){return x&&typeof x==="object"}).map(function(x){if(!x.id)x.id=uid();return x})});
-  d.params.forEach(function(p){p.name=str(p.name);p.min=+p.min||0;p.max=p.max==null?100:+p.max||0;p.val=p.val==null?p.min:+p.val||0;p.desc=str(p.desc)});
+  d.params.forEach(function(p){p.locked=!!p.locked;p.name=str(p.name);p.min=+p.min||0;p.max=p.max==null?100:+p.max||0;p.val=p.val==null?p.min:+p.val||0;p.desc=str(p.desc)});
+  d.params.forEach(function(p){if(p.base==null)p.base=p.val});d.secret=str(d.secret);d.timeLock=!!d.timeLock;d.locked=!!d.locked;
   d.book.forEach(function(b){b.keys=Array.isArray(b.keys)?b.keys.join(","):str(b.keys);b.text=str(b.text)});
   if(Array.isArray(w.chars))d.chars=w.chars.map(normChar);
   if(w.v!==4)d.focus=null;if(Array.isArray(w.present))d.present=w.present;d.v=4;
@@ -506,17 +527,19 @@ function renderPortrait(){var f=focusChar(),rec=f?(chImg(f,f.cur)||chMain(f)):nu
 function renderStatus(){if(!W)return;
   var list=$("presentList"),pcs=presentChars();list.textContent="";
   if(!pcs.length)list.appendChild(h("span",{class:"hint",text:"まだ誰も登場していません"}));
-  pcs.forEach(function(c){var a=c.affinity,fill=h("i",{class:a>=0?"pos":"neg",style:"left:"+(a>=0?50:50+a/2)+"%;width:"+Math.abs(a)/2+"%"});
+  pcs.forEach(function(c){var ps=(c.params||[]).filter(function(p){return str(p.name).trim()});
+    var bars=ps.map(function(p){var pct=p.max>p.min?(p.val-p.min)/(p.max-p.min)*100:0;
+      return h("span",{class:"cp"},[h("span",{class:"cp-top"},[h("span",{text:p.name}),h("span",{text:String(p.val)})]),h("span",{class:"pbar-track",style:"display:block"},h("span",{class:"pbar-fill",style:"display:block;width:"+pct+"%"}))])});
     list.appendChild(h("div",{class:"prow-wrap"},[h("button",{class:"prow",type:"button","aria-pressed":c.id===W.focus?"true":"false","aria-label":c.name+"の画像を表示",
-      onclick:function(){W.focus=W.focus===c.id?null:c.id;saveWorld();renderStatus()}},[
-      h("span",{class:"prow-top"},[h("span",null,[c.name,c.mood?h("span",{class:"prow-sub",text:"　"+c.mood}):null]),h("span",{class:a>0?"pos":a<0?"neg":"",text:signed(a)})]),
-      h("span",{class:"pm"},[fill,h("b")])]),
+      onclick:function(){W.focus=W.focus===c.id?null:c.id;saveWorld();renderStatus()}},[h("span",{class:"prow-top"},[h("span",null,[c.name,c.mood?h("span",{class:"prow-sub",text:"　"+c.mood}):null])])].concat(bars)),
       h("button",{class:"mini",type:"button",text:"退場","aria-label":c.name+"をこの場から外す",onclick:function(){W.present=(W.present||[]).filter(function(x){return x!==c.id});if(W.focus===c.id)W.focus=null;saveWorld();renderStatus()}})]))});
   var abs=W.chars.filter(function(c){return c.name.trim()&&(W.present||[]).indexOf(c.id)<0});
-  if(abs.length){var se=h("select",{id:"callSel","aria-label":"この場に呼ぶ人物"});var o0=h("option",{text:"人物を選ぶ"});o0.value="";se.appendChild(o0);
+  if(abs.length&&!isLocked()){var se=h("select",{id:"callSel","aria-label":"この場に呼ぶ人物"});var o0=h("option",{text:"人物を選ぶ"});o0.value="";se.appendChild(o0);
     abs.forEach(function(c){var o=h("option",{text:c.name});o.value=c.id;se.appendChild(o)});
     list.appendChild(h("div",{class:"row",style:"margin:4px 0 0"},[se,h("button",{class:"mini",type:"button",text:"この場に呼ぶ",onclick:function(){if(!se.value)return;if(!W.present)W.present=[];W.present.push(se.value);saveWorld();renderStatus()}})]))}
-  $("stScene").textContent=W.scene||"—";$("stTime").textContent=W.time||"—";
+  $("stScene").textContent=W.scene||"—";
+  $("clockTxt").textContent=W.time||"時間未設定";var tl=$("timeLockBtn");tl.setAttribute("aria-pressed",W.timeLock?"true":"false");tl.innerHTML=W.timeLock?LOCK_SVG:UNLOCK_SVG;
+  tl.disabled=isLocked();tl.title=W.timeLock?"時間の進行はロック中（押すと解除）":"押すと時間の進行をロック";
   $("stageSum").textContent=[W.scene||"場所未設定",W.time,pcs.length?pcs.map(function(c){return c.name}).join("・"):"人物なし"].filter(Boolean).join(" ／ ");
   var box=$("customParams");box.textContent="";
   W.params.forEach(function(p){if(!str(p.name).trim())return;var min=+p.min||0,max=+p.max||0,val=clamp(+p.val||0,min,Math.max(min,max)),pct=max>min?(val-min)/(max-min)*100:0;
@@ -530,7 +553,7 @@ function msgEl(m,i){var isC=m.r==="c",last=i===L.msgs.length-1;
   w.appendChild(h("span",{class:"who",text:isC?wname():uname()}));
   var body=h("div",{class:"body",text:m.t});w.appendChild(body);
   var meta=h("div",{class:"meta"});
-  if(isC&&m.cd){W.chars.forEach(function(c){var v=m.cd[c.id];if(v)meta.appendChild(h("span",{class:"chip "+(v>0?"delta-pos":"delta-neg"),text:c.name+" "+signed(v)}))})}
+  if(isC&&m.cd){W.chars.forEach(function(c){var d=m.cd[c.id];if(!d||typeof d!=="object")return;(c.params||[]).forEach(function(p){var v=d[p.id];if(v)meta.appendChild(h("span",{class:"chip "+(v>0?"delta-pos":"delta-neg"),text:c.name+" "+p.name+" "+signed(v)}))})})}
   if(isC&&m.pd){W.params.forEach(function(p){var v=m.pd[p.id];if(v)meta.appendChild(h("span",{class:"chip",text:p.name+" "+signed(v)}))})}
   if(isC&&m.u&&index.settings.showUsage!==false)meta.appendChild(h("span",{class:"usage",text:usageText(m.u)}));
   if(last&&!isC&&!busy)meta.appendChild(h("button",{class:"mini strong",type:"button",text:"返答を作る",onclick:function(){generate("reply")}}));
@@ -556,7 +579,7 @@ function startEdit(m,w){if(busy)return;var ta=h("textarea",{class:"msg-edit","ar
     h("button",{class:"mini",type:"button",text:"やめる",onclick:function(){renderLog()}})]);
   w.textContent="";w.appendChild(ta);w.appendChild(row);ta.focus()}
 function revert(m){if(m.r!=="c")return;
-  if(m.cd)W.chars.forEach(function(c){if(m.cd[c.id])c.affinity=clamp(c.affinity-m.cd[c.id],-100,100)});
+  if(m.cd)W.chars.forEach(function(c){var d=m.cd[c.id];if(!d||typeof d!=="object")return;(c.params||[]).forEach(function(p){if(d[p.id])p.val=clamp((+p.val||0)-d[p.id],+p.min||0,+p.max||0)})});
   if(m.pd)W.params.forEach(function(p){if(m.pd[p.id])p.val=clamp((+p.val||0)-m.pd[p.id],+p.min||0,+p.max||0)})}
 function deleteMsg(m){if(busy)return;var i=L.msgs.indexOf(m);if(i<0)return;revert(m);L.msgs.splice(i,1);choices=[];saveLog();saveWorld();renderLog();renderStatus()}
 function regenerate(){if(busy)return;var m=L.msgs[L.msgs.length-1];if(!m||m.r!=="c")return;revert(m);L.msgs.pop();if(W.turns>0)W.turns--;choices=[];saveLog();saveWorld();renderLog();renderStatus();generate("reply")}
@@ -591,7 +614,10 @@ function charBlock(c,withState){var A=["## "+c.name];
   CH_FIELDS.forEach(function(f){var v=c.s[f.k].trim();if(v)A.push("- "+f.label+": "+v)});
   if(c.s.appearance.trim())A.push("- 外見: "+c.s.appearance.trim());
   if(c.s.examples.trim())A.push("- セリフの例: "+c.s.examples.trim());
-  if(withState)A.push("- 主人公への好感度: "+c.affinity+"（"+stageOf(c.affinity)+"）"+(c.mood?"、気分: "+c.mood:""));return A.join("\n")}
+  var ps=(c.params||[]).filter(function(p){return str(p.name).trim()});
+  if(ps.length)A.push("- パラメータ: "+ps.map(function(p){return p.name+"（"+p.min+"〜"+p.max+(p.desc.trim()?"。"+p.desc.trim():"")+"）"}).join("、"));
+  if(withState){var stt=charState(c);if(stt)A.push("- 現在: "+stt)}return A.join("\n")}
+function charState(c){var x=[];(c.params||[]).forEach(function(p){if(str(p.name).trim())x.push(p.name+" "+p.val+"/"+p.max)});if(c.mood)x.push("気分 "+c.mood);return x.join("、")}
 function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||"主人公",st=W.style,P1=[],P2=[],P3=[];
   /* part 1: changes only when the world's settings change (cached) */
   P1.push("以下の世界を舞台にした、対話型シミュレーションの本文を書いてください。これはユーザーが個人で楽しむ創作です。");
@@ -605,18 +631,20 @@ function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||
     "- 本文の長さ: "+LEN_TXT[normLen(st.len)]+"（最後のSTATUS行は字数に含めない）。指定より大幅に短くしない。",
     "- ユーザーの発言のうち（）や＊＊で囲まれた部分は、行動の描写や場面への指示として扱う。",
     "- 特定の人物との一対一の会話に固定しない。ユーザーの入力に複数の人物への言動が含まれていれば、関わった人物それぞれの反応を書く。入力で触れられていない人物も、その場にいれば自分の意思で動いてよい。誰にも向けられていない行動には、場面や周囲の反応で応える。",
-    "- 各人物は、主人公への好感度が低いほどそっけなく警戒し、高いほど親しく打ち解ける。過去の出来事や長期記憶と矛盾させない。",
-    "- 登場した人物ごとに、今回のやり取りで主人公への好感度がどう変わったかを-10〜+10の整数で判定する。普通のやり取りは-2〜+3程度。大きく動かすのは特別な出来事のときだけ。");
-  var ex={scene:"場所や状況",time:"時間帯",cast:[{name:"人物名",affinity:2,mood:"うれしい"}]};
+    "- 人物にパラメータが設定されている場合は、その名前と説明が表す状態として扱い、値の高低を言動・能力・判断に必ず反映する（例: 好感度が低ければ冷たく避け、高ければ親しく好意的になる。MPが少なければ大技を控える。HPが低ければ弱っている）。過去の出来事や長期記憶と矛盾させない。",
+    "- パラメータは展開に合わせて増減させる。ちょっとしたやり取りなら0〜±3程度、大きな出来事・技や魔法の使用・戦闘ではそれ以上動かしてよい。パラメータが設定されていない人物や項目の数値は作らない。",
+    "- 時間は物語の進行とやり取りに合わせて自然に進める。場面が大きく変わるときは数時間や日をまたいでもよい。");
+  var ex={scene:"場所や状況",time:"時間帯",cast:[{name:"人物名",mood:"うれしい",params:{"パラメータ名":2}}]};
   if(ps.length){ex.params={};ps.forEach(function(p){ex.params[p.name]=0})}
   if(st.choices)ex.choices=["（候補1）","（候補2）","（候補3）"];
   P1.push("- 返答の最後に改行して、次の形式の1行を必ず付ける: <<STATUS "+JSON.stringify(ex)+">>",
     "  - scene: 今の場所や状況（15字以内）。time: 時間帯や日付（10字以内）。",
-    "  - cast: 返答の終わりの時点でその場にいる、名前のある人物すべて（最大6人、端役は含めない）。誰もいなければ空の配列。name は登録名があればそのまま使う。affinity は主人公と関わりがなければ0。mood は気分（8文字以内）。",
+    "  - cast: 返答の終わりの時点でその場にいる、名前のある人物すべて（最大6人、端役は含めない）。誰もいなければ空の配列。name は登録名があればそのまま使う。mood は気分（8文字以内）。params は、その人物に設定されたパラメータのうち変化したものだけを変化量（整数）で書く。変化がなければ省略する。",
     "  - expression: 後で指定がある人物だけに付ける。");
-  if(ps.length)P1.push("  - params: 各パラメータの変化量（整数、変化がなければ0）。");
+  if(ps.length)P1.push("  - 一番外側の params: 主人公のパラメータの変化量（整数、変化がなければ0）。");
   if(st.choices)P1.push("  - choices: "+un+"の次の行動や発言の候補を3つ、それぞれ30字以内で。方向性を変えること。");
   P1.push("  - この行以外に数値やステータスの話は書かない。");
+  if(W.secret.trim())P1.push("","# 非公開の進行設定（ユーザーには見えていない。本文・選択肢・人物の発言で直接明かさず、物語の展開の中で自然に反映する）",W.secret.trim());
   /* part 2: changes when people come and go, or memory is summarized (cached) */
   var named=W.chars.filter(function(c){return c.name.trim()});
   var pres=W.present||[],prev=histEnd>0&&L.msgs[histEnd-1]?L.msgs[histEnd-1].t:"",near=(latest||"")+"\n"+prev;
@@ -628,12 +656,12 @@ function buildPrompt(kind,latest,histEnd,picked,ctx){var un=W.user.name.trim()||
   if(stL.length){P2.push("","# そのほかのこの場の人物");stL.forEach(function(c){P2.push("- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":""))})}
   if(W.lt.trim())P2.push("","# 長期記憶（これまでの要点）",W.lt.trim());
   /* part 3: changes every turn (not cached) */
-  if(called.length){P3.push("# 今回の入力で名前が出た人物の設定（今はこの場にいない）");called.forEach(function(c){P3.push(hasDetail(c)?charBlock(c,true):"- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":"")+" 好感度"+c.affinity)});P3.push("")}
+  if(called.length){P3.push("# 今回の入力で名前が出た人物の設定（今はこの場にいない）");called.forEach(function(c){P3.push(hasDetail(c)?charBlock(c,true):"- "+c.name+(c.s.role.trim()?"（"+c.s.role.trim()+"）":"")+(charState(c)?" "+charState(c):""))});P3.push("")}
   var book=matchBook(near);if(book.length){P3.push("# 関連する設定資料");book.forEach(function(l){P3.push("- "+l.text.trim())});P3.push("")}
   if(picked.length){P3.push("# 今の場面に関係する過去の出来事");picked.forEach(function(m){P3.push("- 【"+m.title+"】"+m.sum)});P3.push("")}
-  P3.push("# 現在の状態");if(W.scene)P3.push("- 場所・状況: "+W.scene);if(W.time)P3.push("- 時間: "+W.time);
-  ps.forEach(function(p){P3.push("- "+p.name+": "+p.val+"（"+p.min+"〜"+p.max+"）"+(p.desc?" … "+p.desc:""))});
-  onstage.forEach(function(c){P3.push("- "+c.name+"の主人公への好感度: "+c.affinity+"（"+stageOf(c.affinity)+"）"+(c.mood?"、気分: "+c.mood:""))});
+  P3.push("# 現在の状態");if(W.scene)P3.push("- 場所・状況: "+W.scene);P3.push("- 時間: "+(W.time||"未設定")+(W.timeLock?"（固定。時間を進めず、STATUSの time もこのまま書く）":""));
+  ps.forEach(function(p){P3.push("- 主人公の"+p.name+": "+p.val+"（"+p.min+"〜"+p.max+"）"+(p.desc?" … "+p.desc:""))});
+  onstage.forEach(function(c){var stt=charState(c);if(stt)P3.push("- "+c.name+": "+stt)});
   var exprs=onstage.concat(called).map(function(c){var ls=c.images.map(function(x){return str(x.label).trim()}).filter(function(x,i,a){return x&&a.indexOf(x)===i});return ls.length>1?c.name+"（"+ls.join(" / ")+"）":null}).filter(Boolean);
   if(exprs.length)P3.push("","# STATUSの expression（cast のこの人物にだけ付け、選択肢から1つ選ぶ）",exprs.join("、"));
   var hist=L.msgs.slice(Math.max(0,histEnd-st.hist),histEnd);
@@ -676,7 +704,10 @@ function applyReply(kind,full,used,r,acc){var reply=cleanReply(full)||"……",s
     if(!nm||nm===un||nm==="主人公"||nm==="人物名")return;var ch=findCharByName(nm);
     if(!ch){if(!W.style.autoCast||W.chars.length>=40)return;ch=blankCharRec();ch.name=nm;ch.auto=true;W.chars.push(ch)}
     if(pres.indexOf(ch.id)<0)pres.push(ch.id);
-    var b=ch.affinity;ch.affinity=clamp(b+clamp(int(e.affinity),-10,10),-100,100);if(ch.affinity!==b){cd[ch.id]=ch.affinity-b;anyC=true}
+    var dd={},anyD=false;
+    if(e.params&&typeof e.params==="object")(ch.params||[]).forEach(function(p){var k=str(p.name).trim();if(!k||e.params[k]==null)return;var dv=int(e.params[k]);if(!dv)return;
+      var b=+p.val||0;p.val=clamp(b+dv,+p.min||0,+p.max||0);if(p.val!==b){dd[p.id]=p.val-b;anyD=true}});
+    if(anyD){cd[ch.id]=dd;anyC=true}
     if(e.mood)ch.mood=str(e.mood).slice(0,12);
     if(e.expression){var lab=str(e.expression).trim(),im=ch.images.filter(function(x){return str(x.label).trim()===lab})[0];if(im)ch.cur=im.id}});
   if(anyC)m.cd=cd;
@@ -685,7 +716,7 @@ function applyReply(kind,full,used,r,acc){var reply=cleanReply(full)||"……",s
   W.params.forEach(function(p){var dv=st.params&&typeof st.params==="object"?int(st.params[p.name]):0;if(!dv)return;
     var b=+p.val||0;p.val=clamp(b+dv,+p.min||0,+p.max||0);if(p.val!==b){pd[p.id]=p.val-b;anyP=true}});
   if(anyP)m.pd=pd;
-  if(st.scene)W.scene=str(st.scene).slice(0,30);if(st.time)W.time=str(st.time).slice(0,20);
+  if(st.scene)W.scene=str(st.scene).slice(0,30);if(st.time&&!W.timeLock)W.time=str(st.time).slice(0,20);
   choices=W.style.choices&&Array.isArray(st.choices)?st.choices.slice(0,3).map(function(x){return str(x).slice(0,60)}).filter(Boolean):[];
   if(kind==="reply")W.turns++;
   if(acc&&(acc.in||acc.out))m.u={in:acc.in,cw:acc.cw,cr:acc.cr,out:acc.out,yen:Math.round(acc.yen*100)/100,unknown:acc.unknown};
@@ -771,7 +802,7 @@ function renderApi(){var v=$("view-api");v.textContent="";var g=index.settings;
 /* ================= lobby ================= */
 var ioNote="";
 function setIo(t){ioNote=t;var e=$("ioNote");if(e)e.textContent=t}
-function openWorld(id,dest){if(busy)return;loadLocalWorld(id);editId=null;choices=[];sysNote="";bannerMsg=null;memNote="";location.hash=dest||"#chat";route();pullWorld(id)}
+function openWorld(id,dest){if(busy)return;unlocked={};loadLocalWorld(id);editId=null;choices=[];sysNote="";bannerMsg=null;memNote="";location.hash=dest||"#chat";route();pullWorld(id)}
 function createWorld(){if(busy)return;var w=blankWorld();w.name="新しい世界";index.worlds.push({id:w.id,name:w.name,sample:false});W=w;L=freshLog(w);editId=null;choices=[];sysNote="";bannerMsg=null;saveIndex();saveWorld();location.hash="#room";route()}
 function removeWorld(id){if(busy)return;var lw=lsGet(K.w(id));
   if(lw){dropImage(lw.image);(lw.chars||[]).forEach(function(c){(c.images||[]).forEach(dropImage)})}
@@ -784,12 +815,12 @@ function renderLobby(){var v=$("view-lobby");v.textContent="";
   v.appendChild(h("div",{class:"row"},h("button",{class:"btn",type:"button",text:"新規世界作成",onclick:createWorld})));
   var box=h("div");v.appendChild(box);
   if(!index.worlds.length)box.appendChild(h("p",{class:"hint",text:"まだ世界がありません。「新規世界作成」から始めてください。"}));
-  index.worlds.forEach(function(e){box.appendChild(h("div",{class:"listrow"},[
-    h("span",{class:"who"},[h("strong",{text:e.name||"名前のない世界"}),e.sample?h("span",{class:"badge",text:"サンプル"}):null]),
+  index.worlds.forEach(function(e){var lw=lsGet(K.w(e.id))||{},lk=!!lw.locked;box.appendChild(h("div",{class:"listrow"},[
+    h("span",{class:"who"},[h("strong",{text:e.name||"名前のない世界"}),e.sample?h("span",{class:"badge",text:"サンプル"}):null,lk?h("span",{class:"badge",text:"ロック中"}):null]),
     h("span",{class:"row",style:"margin:0"},[
       h("button",{class:"mini strong",type:"button",text:"入る",onclick:function(){openWorld(e.id,"#chat")}}),
       h("button",{class:"mini",type:"button",text:"設定",onclick:function(){openWorld(e.id,"#room")}}),
-      armed("削除",function(){removeWorld(e.id)},"mini")])]))});
+      lk?null:armed("削除",function(){removeWorld(e.id)},"mini")])]))});
   v.appendChild(h("h2",{class:"sec",text:"用意された世界"}));
   v.appendChild(h("p",{class:"note",text:"設定済みの世界です。「追加」を押すと上の世界リストに入り、ふつうの世界と同じように編集できます。何度でも追加できます。"}));
   PRESETS.forEach(function(p){v.appendChild(h("div",{class:"listrow"},[
@@ -939,6 +970,14 @@ function addPreset(p){if(busy)return;var w=p.build(),l=freshLog(w);
   w.updatedAt=Date.now();lsSet(K.w(w.id),w);dbPut("w_"+w.id,w);l.updatedAt=Date.now();lsSet(K.l(w.id),l);dbPut("l_"+w.id,l);
   setIo("「"+w.name+"」を世界リストに追加しました。");renderLobby()}
 
+/* ================= lock ================= */
+var unlocked={};
+function isLocked(){return !!(W&&W.locked&&!unlocked[W.id])}
+function pwOk(t){return !!(W&&W.name.trim())&&str(t).trim()===W.name.trim()}
+function gate(v,msg){var inp=h("input",{type:"password",id:"pw"+(++seq)});inp.setAttribute("autocomplete","off");inp.setAttribute("aria-label","パスワード");var note=h("span",{class:"hint"});
+  function go(){if(pwOk(inp.value)){unlocked[W.id]=true;route()}else{note.textContent="パスワードが違います。";inp.value=""}}
+  inp.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.isComposing){e.preventDefault();go()}});
+  v.appendChild(h("div",{class:"card"},[h("strong",{text:msg}),h("div",{class:"row"},[inp,h("button",{class:"btn ghost",type:"button",text:"解除",onclick:go})]),note]))}
 /* ================= world room ================= */
 function imageList(box,owner,isChar,redraw){box.textContent="";
   owner.images.forEach(function(rec){var th=h("img",{class:"thumb",alt:rec.label||"画像"}),src=srcOf(rec);if(src)th.src=src;var isMain=owner.main===rec.id||(!chImg(owner,owner.main)&&owner.images[0]===rec);
@@ -949,6 +988,39 @@ function imageList(box,owner,isChar,redraw){box.textContent="";
         armed("削除",function(){dropImage(rec);owner.images=owner.images.filter(function(x){return x!==rec});if(owner.main===rec.id)owner.main=owner.images[0]?owner.images[0].id:null;if(owner.cur===rec.id)owner.cur=null;saveWorld();redraw()},"mini")])])])))});
   if(!owner.images.length)box.appendChild(h("p",{class:"hint",text:"まだ画像がありません。"}))}
 function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
+  renderYou(v);
+  if(isLocked()){v.appendChild(h("h2",{class:"sec",text:"世界の設定"}));gate(v,"この世界の設定はロックされています。パスワードを入力してください。");return}
+  renderRoomBody(v);renderSecret(v);renderLockSec(v)}
+function renderYou(v){var locked=isLocked();
+  v.appendChild(h("h2",{class:"sec",text:"あなた（主人公）"}));
+  v.appendChild(field("名前",bind(W.user,"name",{after:touched}),"空欄なら「あなた」として扱われます"));
+  v.appendChild(field("あなたの設定",bind(W.user,"profile",{area:1,after:touched}),"この世界での立場、外見、能力など。この世界だけの設定です"));
+  v.appendChild(h("h3",{class:"sub",text:"あなたのパラメータ"}));
+  v.appendChild(h("p",{class:"note",text:"所持金・体力・名声など、この世界であなたについて追いたい数値です。返答のたびに変化します。"}));
+  var pbox=h("div");v.appendChild(pbox);
+  function drawParams(){pbox.textContent="";
+    W.params.forEach(function(p){
+      if(locked&&p.locked){pbox.appendChild(h("div",{class:"ro"},[h("span",{text:p.name||"（名前なし）"}),h("span",{text:p.val+" / "+p.max})]));return}
+      var kids=[h("div",{class:"card-grid"},[bind(p,"name",{ph:"名前",label:"パラメータ名"}),bind(p,"min",{num:1,label:"最小",ph:"最小"}),bind(p,"max",{num:1,label:"最大",ph:"最大"}),bind(p,"val",{num:1,label:"現在値",ph:"現在",after:function(){p.base=p.val}})]),
+        bind(p,"desc",{ph:"何を表すか",label:"説明"})];
+      var row=[armed("削除",function(){W.params=W.params.filter(function(x){return x!==p});saveWorld();drawParams()},"mini")];
+      if(!locked){var lc=h("input",{type:"checkbox",id:"pl"+(++seq)});lc.checked=!!p.locked;lc.addEventListener("change",function(){p.locked=lc.checked;saveWorld()});row.unshift(h("label",{class:"check"},[lc,"ロック中は変更できないようにする"]))}
+      kids.push(h("div",{class:"row"},row));pbox.appendChild(h("div",{class:"card"},kids))})}
+  drawParams();
+  v.appendChild(h("div",{class:"row"},h("button",{class:"btn ghost",type:"button",text:"パラメータを追加",onclick:function(){W.params.push({id:uid(),name:"",min:0,max:100,val:50,base:50,desc:"",locked:false});saveWorld();drawParams()}})))}
+function renderSecret(v){v.appendChild(h("h2",{class:"sec",text:"非公開設定"}));
+  if(!unlocked[W.id]){gate(v,"非公開設定を表示するにはパスワードが必要です。");return}
+  v.appendChild(h("p",{class:"note",text:"謎解きの真相や、これから起こしたい展開など、プレイヤーに見せたくない設定を書きます。AIには毎回送られますが、本文で直接明かさないよう指示しています。"}));
+  v.appendChild(field("非公開の進行設定",bind(W,"secret",{area:1,cls:"tall"})))}
+function renderLockSec(v){v.appendChild(h("h2",{class:"sec",text:"ロック"}));
+  v.appendChild(h("p",{class:"note",text:"ほかの人に遊んでもらうときに使います。ロック中は「あなた」以外の世界の設定、キャラクターの編集、記憶のページ、時間のロックの切り替えが、パスワードなしでは使えなくなります。"}));
+  var cb=h("input",{type:"checkbox",id:"lockOn"});cb.checked=!!W.locked;var nt=h("span",{class:"hint"});
+  cb.addEventListener("change",function(){if(cb.checked&&!W.name.trim()){cb.checked=false;nt.textContent="今の設定ではロックを有効にできません。世界の基本設定を確認してください。";return}
+    W.locked=cb.checked;if(W.locked)unlocked[W.id]=true;saveWorld();renderRoom()});
+  v.appendChild(h("div",{class:"row"},[h("label",{class:"check"},[cb,"この世界の設定をロックする"]),nt]));
+  if(W.locked||unlocked[W.id])v.appendChild(h("div",{class:"row"},[h("button",{class:"btn ghost",type:"button",text:"今すぐ閉じる",onclick:function(){unlocked[W.id]=false;location.hash="#chat";route()}}),
+    h("span",{class:"hint",text:"もう一度パスワードを入れるまで、設定と非公開設定が見えなくなります。"})]))}
+function renderRoomBody(v){
   v.appendChild(h("h2",{class:"sec",text:"世界観"}));
   v.appendChild(h("p",{class:"note",text:"まずここを書きます。世界観さえあれば会話を始められます。既存の作品世界を書けば、その世界の人物は登録しなくても登場します。"}));
   v.appendChild(h("div",{class:"card"},[h("strong",{text:"版権作品から作る"}),h("span",{class:"hint",text:LOOKUP_HINT}),
@@ -967,7 +1039,7 @@ function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
     if(!W.chars.length)cbox.appendChild(h("p",{class:"hint",text:"まだ登録されたキャラクターはいません。"}));
     W.chars.forEach(function(c){var src=srcOf(chMain(c)),th=src?h("img",{class:"thumb sm",alt:"",src:src}):null;
       cbox.appendChild(h("div",{class:"listrow"},[
-        h("span",{class:"who"},[th,h("strong",{text:c.name||"名前未設定"}),c.auto?h("span",{class:"badge",text:"自動登録"}):null,h("span",{class:"hint",text:"好感度 "+signed(c.affinity)})]),
+        h("span",{class:"who"},[th,h("strong",{text:c.name||"名前未設定"}),c.auto?h("span",{class:"badge",text:"自動登録"}):null,(paramsText(c)?h("span",{class:"hint",text:paramsText(c)}):null)]),
         h("span",{class:"row",style:"margin:0"},[
           h("button",{class:"mini strong",type:"button",text:"編集",onclick:function(){editId=c.id;location.hash="#cast";route()}}),
           armed("削除",function(){c.images.forEach(dropImage);W.chars=W.chars.filter(function(x){return x!==c});if(W.focus===c.id)W.focus=null;saveWorld();drawCast()},"mini")])]))})}
@@ -982,10 +1054,6 @@ function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
     h("div",{class:"row"},[cin,h("label",{class:"btn ghost",htmlFor:"charFile",text:"ファイルから読み込む"}),h("span",{class:"hint",id:"charIoNote",text:charIoNote})]),
     pasteBox("charPaste",function(t){var ok=importCharText(t);if(ok)drawCast();return ok})]);
   v.appendChild(cdet);
-
-  v.appendChild(h("h2",{class:"sec",text:"あなた（主人公）"}));
-  v.appendChild(field("名前",bind(W.user,"name",{after:touched}),"空欄なら「あなた」として扱われます"));
-  v.appendChild(field("あなたの設定",bind(W.user,"profile",{area:1,after:touched}),"この世界での立場、外見、能力など。この世界だけの設定です"));
 
   v.appendChild(h("h2",{class:"sec",text:"物語の始まり"}));
   v.appendChild(field("冒頭の場所・状況",bind(W,"opening",{after:touched,ph:"例: 港の酒場、出航の前夜"}),"「物語を始める」を押したときの舞台になります"));
@@ -1008,17 +1076,8 @@ function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
     field("返答の長さ",sel(W.style,"len",[["1","1：平均300字"],["2","2：平均600字"],["3","3：平均1000字"],["4","4：平均1500字"],["5","5：2000字以上"]]),"長いほど利用量が増え、返答に時間がかかります")]));
   v.appendChild(h("div",{class:"row"},check(W.style,"choices","次の行動の候補を3つ表示する",function(){choices=[]})));
 
-  v.appendChild(h("h2",{class:"sec",text:"パラメータ"}));
-  v.appendChild(h("p",{class:"note",text:"人物ごとの好感度とは別に、所持金・体力・名声など、この世界で追いたい数値を足せます。返答のたびに変化します。"}));
-  v.appendChild(h("div",{class:"pair"},[field("今の場所・状況",bind(W,"scene")),field("今の時間",bind(W,"time"))]));
-  var pbox=h("div");v.appendChild(pbox);
-  function drawParams(){pbox.textContent="";
-    W.params.forEach(function(p){pbox.appendChild(h("div",{class:"card"},[
-      h("div",{class:"card-grid"},[bind(p,"name",{ph:"名前",label:"パラメータ名"}),bind(p,"min",{num:1,label:"最小",ph:"最小"}),bind(p,"max",{num:1,label:"最大",ph:"最大"}),bind(p,"val",{num:1,label:"現在値",ph:"現在"})]),
-      bind(p,"desc",{ph:"何を表すか",label:"説明"}),
-      h("div",{class:"row"},armed("削除",function(){W.params=W.params.filter(function(x){return x!==p});saveWorld();drawParams()},"mini"))]))})}
-  drawParams();
-  v.appendChild(h("div",{class:"row"},h("button",{class:"btn ghost",type:"button",text:"パラメータを追加",onclick:function(){W.params.push({id:uid(),name:"",min:0,max:100,val:50,desc:""});saveWorld();drawParams()}})));
+  v.appendChild(h("h2",{class:"sec",text:"場所と時間"}));
+  v.appendChild(h("div",{class:"pair"},[field("今の場所・状況",bind(W,"scene")),field("今の時間",bind(W,"time"),"会話画面の画像の下にも表示されます。鍵のボタンで時間の進行を止められます")]));
 
   v.appendChild(h("h2",{class:"sec",text:"ショートカット"}));
   v.appendChild(h("p",{class:"note",text:"入力欄の上に並ぶボタンです。押すと（）付きの指示として入力欄に入ります。"}));
@@ -1032,16 +1091,16 @@ function renderRoom(){var v=$("view-room");v.textContent="";if(!W)return;
   v.appendChild(h("h2",{class:"sec",text:"やり直しと書き出し"}));
   v.appendChild(h("div",{class:"row"},[
     armed("会話ログだけ消去",function(){L.msgs=[];choices=[];saveLog();setRoomNote("会話ログを消去しました。")}),
-    armed("最初からやり直す",function(){L=freshLog(W);W.chars.forEach(function(c){c.affinity=0;c.mood="";c.cur=null});W.scene=W.opening||"";W.time="";W.turns=0;W.lt="";W.mem=[];W.present=[];W.focus=null;choices=[];sysNote="";saveWorld();saveLog();drawCast();setRoomNote("最初の状態に戻しました。")}),
-    h("button",{class:"btn ghost",type:"button",text:"この世界を書き出す",onclick:exportWorld})]));
+    armed("最初からやり直す",function(){L=freshLog(W);W.chars.forEach(function(c){(c.params||[]).forEach(function(p){if(p.base!=null)p.val=p.base});c.mood="";c.cur=null});W.params.forEach(function(p){if(p.base!=null)p.val=p.base});W.scene=W.opening||"";W.time="";W.turns=0;W.lt="";W.mem=[];W.present=[];W.focus=null;choices=[];sysNote="";saveWorld();saveLog();drawCast();setRoomNote("最初の状態に戻しました。")}),
+    (!W.secret.trim()||unlocked[W.id])?h("button",{class:"btn ghost",type:"button",text:"この世界を書き出す",onclick:exportWorld}):null]));
   v.appendChild(h("p",{class:"hint",id:"roomNote",text:""}));
-  v.appendChild(h("p",{class:"hint",text:"「最初からやり直す」は、ログ・記憶・好感度を初期化します。世界観・キャラクター・画像は残ります。"}));
+  v.appendChild(h("p",{class:"hint",text:"「最初からやり直す」は、ログと記憶を消し、パラメータを設定した初期値に戻します。世界観・キャラクター・画像は残ります。"}));
   v.appendChild(h("div",{id:"ioBox"}))}
 function setRoomNote(t){var e=$("roomNote");if(e)e.textContent=t}
 
 /* ================= character editor ================= */
 var lkCharFor=null;
-function renderCast(){var v=$("view-cast");v.textContent="";if(!W)return;var c=findChar(editId);if(lkCharFor!==editId&&!lookupBusy){lkMsg.char="";lkCharFor=editId}
+function renderCast(){var v=$("view-cast");v.textContent="";if(!W)return;if(isLocked()){gate(v,"キャラクターの設定はロックされています。パスワードを入力してください。");return}var c=findChar(editId);if(lkCharFor!==editId&&!lookupBusy){lkMsg.char="";lkCharFor=editId}
   if(!c){v.appendChild(h("p",{class:"note",text:"編集するキャラクターが選ばれていません。"}));v.appendChild(h("a",{class:"btn ghost",href:"#room",text:"世界のページへ戻る"}));return}
   function edited(){if(c.auto){c.auto=false}touched()}
   v.appendChild(h("h2",{class:"sec",text:"キャラクター設定"}));
@@ -1067,14 +1126,23 @@ function renderCast(){var v=$("view-cast");v.textContent="";if(!W)return;var c=f
   v.appendChild(h("div",{class:"row"},[h("button",{class:"btn ghost",type:"button",text:"基本の画像から外見を読み取り直す",onclick:function(){readAppearance(c)}}),h("span",{class:"hint",id:"apNote",text:apNote})]));
 
   v.appendChild(h("h2",{class:"sec",text:"今の状態"}));
-  var aff=h("input",{type:"number",id:"affInput",min:"-100",max:"100",step:"1"});aff.value=c.affinity;
-  aff.addEventListener("change",function(){var n=clamp(Math.round(+aff.value||0),-100,100);aff.value=n;c.affinity=n;saveWorld()});
-  v.appendChild(h("div",{class:"pair"},[field("主人公への好感度（-100〜100）",aff),field("気分",bind(c,"mood"))]));
+  v.appendChild(field("気分",bind(c,"mood")));
+  v.appendChild(h("h3",{class:"sub",text:"この人物のパラメータ"}));
+  v.appendChild(h("p",{class:"note",text:"初期は何もありません。好感度・MPなど、名前と説明を付けて足すと、物語の展開で増減し、その値がこの人物の言動に反映されます。基本は1〜100です。"}));
+  var cpb=h("div");v.appendChild(cpb);
+  function drawCP(){cpb.textContent="";c.params.forEach(function(p){cpb.appendChild(h("div",{class:"card"},[
+    h("div",{class:"card-grid"},[bind(p,"name",{ph:"名前（例: 好感度）",label:"パラメータ名"}),bind(p,"min",{num:1,label:"最小",ph:"最小"}),bind(p,"max",{num:1,label:"最大",ph:"最大"}),bind(p,"val",{num:1,label:"現在値",ph:"現在",after:function(){p.base=p.val}})]),
+    bind(p,"desc",{ph:"何を表すか（例: 主人公への好意。低いと冷たく、高いと親しい）",label:"説明"}),
+    h("div",{class:"row"},armed("削除",function(){c.params=c.params.filter(function(x){return x!==p});saveWorld();drawCP()},"mini"))]))})}
+  drawCP();
+  var PRE=[["好感度","主人公への好意。低いほど冷たく避け、高いほど親しく好意的になる",50],["信頼","主人公をどれだけ信じて頼るか。低いと疑い、高いと任せる",50],["HP","体力。ダメージで減り、0に近いほど弱って動けなくなる",100],["MP","技や魔法に使う力。使うと減り、休むと回復する。少ないと大技を控える",100]];
+  v.appendChild(h("div",{class:"row"},[h("button",{class:"btn ghost",type:"button",text:"パラメータを追加",onclick:function(){c.params.push({id:uid(),name:"",min:1,max:100,val:50,base:50,desc:""});saveWorld();drawCP()}})].concat(PRE.map(function(x){
+    return h("button",{class:"mini",type:"button",text:"＋"+x[0],onclick:function(){if(c.params.some(function(p){return p.name===x[0]}))return;c.params.push({id:uid(),name:x[0],min:1,max:100,val:x[2],base:x[2],desc:x[1]});saveWorld();drawCP()}})}))));
   v.appendChild(h("div",{class:"row"},[h("a",{class:"btn",href:"#room",text:"キャラクターリストへ戻る"}),
     armed("このキャラを削除",function(){c.images.forEach(dropImage);W.chars=W.chars.filter(function(x){return x!==c});if(W.focus===c.id)W.focus=null;editId=null;saveWorld();location.hash="#room";route()})]))}
 
 /* ================= memory view ================= */
-function renderMemory(){var v=$("view-memory");v.textContent="";if(!W)return;
+function renderMemory(){var v=$("view-memory");v.textContent="";if(!W)return;if(isLocked()){gate(v,"記憶のページはロックされています。パスワードを入力してください。");return}
   v.appendChild(h("h2",{class:"sec",text:"常に守るメモ"}));
   v.appendChild(field("メモ",bind(W,"note",{area:1}),"毎回かならず送られます。忘れてほしくない事実や、守ってほしい決まりを書きます"));
   v.appendChild(h("h2",{class:"sec",text:"長期記憶"}));
@@ -1137,8 +1205,8 @@ function charList(j){var arr=Array.isArray(j)?j:Array.isArray(j.chars)?j.chars:j
   return arr.filter(function(c){return c&&typeof c==="object"&&str(c.name).trim()})}
 function addCharsData(j){if(!W)return {added:0,updated:0};var added=0,updated=0;
   charList(j).forEach(function(raw){var c=normChar(raw),ex=W.chars.filter(function(x){return x.name.trim()===c.name.trim()})[0];
-    if(ex){CH_KEYS.forEach(function(k){if(c.s[k].trim())ex.s[k]=c.s[k]});ex.auto=false;updated++}
-    else if(W.chars.length<60){c.id=uid();c.images=[];c.main=null;c.cur=null;c.auto=false;c.affinity=clamp(int(raw.affinity),-100,100);W.chars.push(c);added++}});
+    if(ex){CH_KEYS.forEach(function(k){if(c.s[k].trim())ex.s[k]=c.s[k]});if(c.params.length)ex.params=c.params;ex.auto=false;updated++}
+    else if(W.chars.length<60){c.id=uid();c.images=[];c.main=null;c.cur=null;c.auto=false;W.chars.push(c);added++}});
   if(added||updated){touched();saveWorld()}return {added:added,updated:updated}}
 function parseImport(text){var t=str(text).trim(),j=null;try{j=JSON.parse(t)}catch(e){j=extractJson(t)}return j}
 function importWorldText(text){if(busy)return;var j=parseImport(text);
@@ -1179,6 +1247,9 @@ function route(){var v=currentView();
   if(v!=="chat"&&v!=="welcome")$("view-"+v).scrollTop=0}
 function autosize(){var t=$("input");t.style.height="44px";t.style.height=Math.min(120,Math.max(44,t.scrollHeight+2))+"px"}
 
+var LOCK_SVG='<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+var UNLOCK_SVG='<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 7V5a3 3 0 0 1 5.8-1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+$("timeLockBtn").addEventListener("click",function(){if(!W||isLocked())return;W.timeLock=!W.timeLock;saveWorld();renderStatus()});
 var stageOpen=lsRaw("sw:stageOpen")==="1";
 function applyStage(){$("stage").hidden=!stageOpen;$("stageToggle").setAttribute("aria-expanded",stageOpen?"true":"false");$("stageAct").textContent=stageOpen?"閉じる":"人物・画像を開く";$("stArrow").textContent=stageOpen?"▾":"▸"}
 $("stageToggle").addEventListener("click",function(){stageOpen=!stageOpen;lsRawSet("sw:stageOpen",stageOpen?"1":"0");applyStage()});
